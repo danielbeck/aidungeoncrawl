@@ -109,7 +109,7 @@ def dict_from_row(row):
 def index():
     return jsonify({
         'message': 'Boilerplate API',
-        'endpoints': ['/items']
+        'endpoints': ['/items', '/llm']
     })
 
 
@@ -121,15 +121,18 @@ try:
     # If run as module (python3 -m backend.app)
     from backend.endpoints.items import bp as items_bp
     from backend.endpoints.auth import bp as auth_bp
+    from backend.endpoints.llm import bp as llm_bp
 except ImportError:
     # If run as script (python3 app.py)
     from endpoints.items import bp as items_bp
     from endpoints.auth import bp as auth_bp
+    from endpoints.llm import bp as llm_bp
 
 # Provide DB helpers to Blueprints via app config
 
 app.config['get_db'] = get_db
 app.config['dict_from_row'] = dict_from_row
+app.config['llm_settings'] = settings
 
 # Secure session configuration
 app.config['SESSION_COOKIE_SECURE'] = settings.get('FLASK_ENV') == 'production'  # HTTPS only in production
@@ -144,6 +147,7 @@ app.config['WTF_CSRF_CHECK_DEFAULT'] = False  # We'll manually protect endpoints
 
 app.register_blueprint(items_bp)
 app.register_blueprint(auth_bp)
+app.register_blueprint(llm_bp)
 
 
 @app.after_request

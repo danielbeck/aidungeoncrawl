@@ -90,7 +90,7 @@ trap cleanup EXIT
 
 echo "Installing private account configuration (secrets are not printed)..."
 if ! ACCOUNT_CONFIG=$(node -e '
-    const keys = ["SECRET_KEY", "SMTP_HOST", "SMTP_PORT", "SMTP_SECURE", "SMTP_FROM_EMAIL", "SMTP_FROM_NAME", "SMTP_USERNAME", "SMTP_PASSWORD"];
+    const keys = ["SECRET_KEY", "SMTP_HOST", "SMTP_PORT", "SMTP_SECURE", "SMTP_FROM_EMAIL", "SMTP_FROM_NAME", "SMTP_USERNAME", "SMTP_PASSWORD", "LLM_PROVIDER", "OLLAMA_URL", "OLLAMA_MODEL", "OPENROUTER_URL", "OPENROUTER_API_KEY", "OPENROUTER_MODEL"];
     const settings = Object.fromEntries(keys.map(key => [key, process.env[key]]));
     const domain = process.env.PRODUCTION_DOMAIN;
     if (!domain) throw new Error("PRODUCTION_DOMAIN is required.");
@@ -127,7 +127,7 @@ done
 
 # Check if backend directory exists before creating (to detect first-time deploy)
 BACKEND_EXISTS=$(ssh -o ControlPath="$CONTROL_PATH" $USER@$HOST "if [ -d '${REMOTE_DIR}backend' ]; then echo 1; else echo 0; fi")
-ssh -o ControlPath="$CONTROL_PATH" $USER@$HOST "mkdir -p ${REMOTE_DIR}backend ${REMOTE_DIR}frontend"
+ssh -o ControlPath="$CONTROL_PATH" $USER@$HOST "mkdir -p ${REMOTE_DIR}backend ${REMOTE_DIR}frontend ${REMOTE_DIR}shared"
 echo "✅ Remote directories ensured."
 # Rsync backend with --delete to remove unwanted files
 rsync -avz --delete --progress \
@@ -145,6 +145,14 @@ rsync -avz --delete --progress \
     --exclude='.git/' \
     --exclude='.DS_Store' \
     backend/ $USER@$HOST:${REMOTE_DIR}backend/
+
+# Files used by both backend (read at runtime) and frontend (bundled at build),
+# e.g. LLM prompts/schemas. shared/.htaccess blocks direct web access.
+rsync -avz --delete --progress \
+    -e "ssh -o ControlPath=$CONTROL_PATH" \
+    --exclude='.DS_Store' \
+    shared/ $USER@$HOST:${REMOTE_DIR}shared/
+ssh -o ControlPath="$CONTROL_PATH" $USER@$HOST "chmod -R g-w,o-w ${REMOTE_DIR}shared || true"
 
 # The CGI launcher resolves its adjacent virtualenv and Python entry point.
 scp -o ControlPath="$CONTROL_PATH" backend/api.cgi $USER@$HOST:${REMOTE_DIR}backend/api.cgi

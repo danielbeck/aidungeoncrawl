@@ -7,6 +7,8 @@ import ItemForm from './components/ItemForm'
 import AuthPage from './components/AuthPage'
 import ProfilePage from './components/ProfilePage'
 import PasswordRecoveryPage from './components/PasswordRecoveryPage'
+import LLMDebugWidget from './components/LLMDebugWidget'
+import RoomGenerator from './components/RoomGenerator'
 import './global.scss'
 
 
@@ -144,6 +146,8 @@ function App() {
             </div>
           )} />
         </Routes>
+        <RoomGenerator />
+        <LLMDebugWidget />
       </main>
     </div>
   )

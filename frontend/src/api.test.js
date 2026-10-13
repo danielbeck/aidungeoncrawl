@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { fetchAPI } from './api.js'
+import { fetchAPI, runLLMCall } from './api.js'
 
 test('API client preserves authenticated requests and returns JSON', async (t) => {
   t.mock.method(globalThis, 'fetch', async (url, options) => {
@@ -68,4 +68,25 @@ test('API client surfaces expired links and email delivery failures', async (t) 
   }))
   await assert.rejects(fetchAPI('/auth/reset-password'), /invalid or expired/)
   await assert.rejects(fetchAPI('/auth/forgot-password'), /Unable to send/)
+})
+
+test('runLLMCall posts input and optional history to the named call', async (t) => {
+  const requests = []
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    requests.push({ url, options })
+    return new Response(JSON.stringify({ data: { title: 'Crypt' }, provider: 'p', model: 'm' }), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  })
+
+  assert.deepEqual(await runLLMCall('describe_room', 'a crypt'), {
+    data: { title: 'Crypt' }, provider: 'p', model: 'm',
+  })
+  const history = [{ role: 'user', content: 'hi' }]
+  await runLLMCall('describe_room', 'a crypt', history)
+
+  assert.ok(requests[0].url.endsWith('/llm/calls/describe_room'))
+  assert.equal(requests[0].options.method, 'POST')
+  assert.deepEqual(JSON.parse(requests[0].options.body), { input: 'a crypt' })
+  assert.deepEqual(JSON.parse(requests[1].options.body), { input: 'a crypt', history })
 })

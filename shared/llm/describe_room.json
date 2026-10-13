@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "A short, evocative name for the room"
+    },
+    "description": {
+      "type": "string",
+      "description": "2-3 sentences of second person prose describing the room"
+    },
+    "exits": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["north", "south", "east", "west"]
+      },
+      "description": "Directions the player can leave the room in"
+    }
+  },
+  "required": ["title", "description", "exits"],
+  "additionalProperties": false
+}

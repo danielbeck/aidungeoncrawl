@@ -4,6 +4,7 @@ import fs from 'fs'
 import path from 'path'
 
 // Read config for base path from .env
+const sharedDir = path.resolve(__dirname, '..', 'shared');
 let base = '/';
 let apiPrefix = '/api';
 try {
@@ -24,8 +25,18 @@ try {
 export default defineConfig({
   plugins: [react()],
   base: base,
+  resolve: {
+    alias: {
+      // Files shared with the backend (e.g. LLM schemas in shared/llm).
+      // JSON imports are bundled at build time.
+      '@shared': sharedDir,
+    },
+  },
   server: {
     port: 3000,
+    fs: {
+      allow: [__dirname, sharedDir],
+    },
     proxy: {
       [apiPrefix]: {
         target: 'http://localhost:8000',

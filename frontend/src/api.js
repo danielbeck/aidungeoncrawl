@@ -30,3 +30,12 @@ export async function fetchAPI(endpoint, options = {}) {
     throw error
   }
 }
+
+// Runs a backend LLMCall registered under `name` (see backend/llm_calls).
+// Resolves to { data, provider, model }.
+export function runLLMCall(name, input, history) {
+  return fetchAPI(`/llm/calls/${encodeURIComponent(name)}`, {
+    method: 'POST',
+    body: JSON.stringify(history ? { input, history } : { input }),
+  })
+}

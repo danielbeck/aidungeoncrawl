@@ -1,0 +1,9 @@
+# Build/runtime inputs only (bundled into the frontend, read by the backend
+# from disk); never serve them over HTTP.
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>
