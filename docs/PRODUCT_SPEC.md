@@ -169,3 +169,4 @@ The first version should support:
 * Graceful handling of failed or invalid model responses.
 
 Avoid implementing combat statistics, dice mechanics, complex NPC simulation, or a general-purpose rules engine.
+

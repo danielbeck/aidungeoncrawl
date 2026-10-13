@@ -1,5 +1,5 @@
 def ensure_account_schema(db):
-    """Add email accounts and reset tokens without discarding existing users or items."""
+    """Add email accounts and reset tokens without discarding existing account data."""
     columns = {row[1] for row in db.execute('PRAGMA table_info(users)')}
     objects = {row[0] for row in db.execute(
         "SELECT name FROM sqlite_master WHERE name IN ('users_email', 'password_resets')"

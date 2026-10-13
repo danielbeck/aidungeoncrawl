@@ -22,7 +22,10 @@ a fake without patching modules:
     transport(messages, schema, schema_name) -> {provider, model, response}
 """
 import json
+import logging
 import os
+import time
+import uuid
 from abc import ABC
 from typing import Any, Callable, Dict, List, NamedTuple, Optional
 
@@ -37,6 +40,8 @@ DEFINITIONS_DIR = os.environ.get('LLM_DEFINITIONS_DIR') or os.path.normpath(
 
 Message = Dict[str, str]
 Transport = Callable[[List[Message], Optional[dict], Optional[str]], dict]
+logger = logging.getLogger(__name__)
+MAX_RESPONSE_LOG_CHARS = 32768
 
 
 class LLMResponseError(LLMError):
@@ -146,7 +151,25 @@ class LLMCall(ABC):
 
     def run(self, user_input: str, history=None) -> LLMResult:
         messages = self.build_messages(user_input, history)
-        result = self._transport(messages, self.response_format, self.name)
-        raw = result.get('response') or ''
-        data = self.validate_response(self.parse_response(raw))
+        call_id = uuid.uuid4().hex[:12]
+        started = time.monotonic()
+        logger.info('LLM call %s [%s] started', self.name, call_id)
+        try:
+            result = self._transport(messages, self.response_format, self.name)
+            raw = result.get('response') or ''
+            preview = raw[:MAX_RESPONSE_LOG_CHARS]
+            if len(raw) > MAX_RESPONSE_LOG_CHARS:
+                preview += f' ... [truncated; {len(raw)} characters total]'
+            logger.info(
+                'LLM call %s [%s] response after %.3fs from %s/%s: %r',
+                self.name, call_id, time.monotonic() - started,
+                result.get('provider'), result.get('model'), preview,
+            )
+            data = self.validate_response(self.parse_response(raw))
+        except (LLMError, ValueError, TypeError, KeyError) as error:
+            logger.exception(
+                'LLM call %s [%s] failed after %.3fs: %s',
+                self.name, call_id, time.monotonic() - started, error,
+            )
+            raise
         return LLMResult(data=data, raw=raw, provider=result.get('provider'), model=result.get('model'))

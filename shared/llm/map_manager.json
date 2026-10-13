@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "properties": {
+    "assessment": {
+      "type": "string",
+      "description": "Concise assessment of movement, relevant exits, and justified map changes."
+    }
+  },
+  "required": ["assessment"],
+  "additionalProperties": false
+}

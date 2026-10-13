@@ -15,12 +15,25 @@ Usage:
 try:
     from backend.llm_calls.base import LLMCall, LLMResponseError, LLMResult
     from backend.llm_calls.describe_room import DescribeRoomCall
+    from backend.llm_calls.gameplay import (
+        InventoryManagerCall, MapManagerCall, NPCManagerCall, NarratorCall, SummarizerCall,
+    )
     from backend.llm_calls.history import MessageHistory
 except ImportError:
     from llm_calls.base import LLMCall, LLMResponseError, LLMResult
     from llm_calls.describe_room import DescribeRoomCall
+    from llm_calls.gameplay import (
+        InventoryManagerCall, MapManagerCall, NPCManagerCall, NarratorCall, SummarizerCall,
+    )
     from llm_calls.history import MessageHistory
 
-REGISTRY = {call.name: call for call in (DescribeRoomCall,)}
+REGISTRY = {call.name: call for call in (
+    DescribeRoomCall, InventoryManagerCall, MapManagerCall, NPCManagerCall,
+    NarratorCall, SummarizerCall,
+)}
 
-__all__ = ['LLMCall', 'LLMResponseError', 'LLMResult', 'DescribeRoomCall', 'MessageHistory', 'REGISTRY']
+__all__ = [
+    'LLMCall', 'LLMResponseError', 'LLMResult', 'DescribeRoomCall', 'MessageHistory',
+    'InventoryManagerCall', 'MapManagerCall', 'NPCManagerCall', 'NarratorCall',
+    'SummarizerCall', 'REGISTRY',
+]

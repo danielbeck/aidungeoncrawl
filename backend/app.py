@@ -7,6 +7,8 @@ import sqlite3
 import os
 from datetime import datetime, timedelta
 import logging
+from logging.handlers import RotatingFileHandler
+from flask.logging import default_handler
 import traceback
 from collections import deque
 try:
@@ -65,6 +67,21 @@ formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
 handler.setFormatter(formatter)
 app.logger.addHandler(handler)
 
+llm_log_path = os.path.join(logs_dir, 'llm.log')
+llm_handler = RotatingFileHandler(
+    llm_log_path, maxBytes=2 * 1024 * 1024, backupCount=3, encoding='utf-8',
+)
+llm_handler.setLevel(logging.INFO)
+llm_handler.setFormatter(logging.Formatter(
+    '%(asctime)s %(levelname)s %(name)s %(message)s',
+))
+for logger_name in ('backend.llm_calls', 'llm_calls', 'backend.game_engine', 'game_engine'):
+    diagnostic_logger = logging.getLogger(logger_name)
+    diagnostic_logger.setLevel(logging.INFO)
+    diagnostic_logger.addHandler(default_handler)
+    diagnostic_logger.addHandler(llm_handler)
+    diagnostic_logger.propagate = False
+
 
 def _trim_log(path, max_lines=10000):
     try:
@@ -108,8 +125,8 @@ def dict_from_row(row):
 @app.route('/')
 def index():
     return jsonify({
-        'message': 'Boilerplate API',
-        'endpoints': ['/items', '/llm']
+        'message': 'AI Dungeon Crawl API',
+        'endpoints': ['/game', '/llm']
     })
 
 
@@ -119,13 +136,13 @@ def index():
 
 try:
     # If run as module (python3 -m backend.app)
-    from backend.endpoints.items import bp as items_bp
     from backend.endpoints.auth import bp as auth_bp
+    from backend.endpoints.game import bp as game_bp
     from backend.endpoints.llm import bp as llm_bp
 except ImportError:
     # If run as script (python3 app.py)
-    from endpoints.items import bp as items_bp
     from endpoints.auth import bp as auth_bp
+    from endpoints.game import bp as game_bp
     from endpoints.llm import bp as llm_bp
 
 # Provide DB helpers to Blueprints via app config
@@ -145,8 +162,8 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024  # 16KB max request size
 app.config['WTF_CSRF_TIME_LIMIT'] = None  # CSRF tokens don't expire (session-based)
 app.config['WTF_CSRF_CHECK_DEFAULT'] = False  # We'll manually protect endpoints
 
-app.register_blueprint(items_bp)
 app.register_blueprint(auth_bp)
+app.register_blueprint(game_bp)
 app.register_blueprint(llm_bp)
 
 

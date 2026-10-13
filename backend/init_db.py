@@ -24,34 +24,7 @@ def init_database():
         )
     ''')
 
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            name TEXT NOT NULL,
-            description TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-        )
-    ''')
-
     ensure_account_schema(conn)
-
-    # Add sample items for the first user if exists
-    cursor.execute('SELECT id FROM users ORDER BY id LIMIT 1')
-    row = cursor.fetchone()
-    if row:
-        user_id = row[0]
-        cursor.execute('SELECT COUNT(*) FROM items WHERE user_id = ?', (user_id,))
-        if cursor.fetchone()[0] == 0:
-            sample_items = [
-                (user_id, 'Sample Item 1', 'This is a sample description'),
-                (user_id, 'Sample Item 2', 'Another sample item'),
-                (user_id, 'Sample Item 3', 'Yet another one'),
-            ]
-            cursor.executemany('INSERT INTO items (user_id, name, description) VALUES (?, ?, ?)', sample_items)
-            print(f"Created {len(sample_items)} sample items for user_id {user_id}")
 
     conn.commit()
     conn.close()

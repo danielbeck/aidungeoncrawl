@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "properties": {
+    "assessment": {
+      "type": "string",
+      "description": "Concise assessment of referenced NPCs and justified NPC changes."
+    }
+  },
+  "required": ["assessment"],
+  "additionalProperties": false
+}

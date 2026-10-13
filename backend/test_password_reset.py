@@ -108,7 +108,7 @@ class PasswordResetTests(unittest.TestCase):
         self.assertEqual(self.reset(token).status_code, 200)
         self.assertEqual(self.reset(token).status_code, 400)
         self.assertIsNone(self.client.get('/auth/me').get_json()['user'])
-        self.assertEqual(other.get('/items/').status_code, 401)
+        self.assertEqual(other.get('/game/').status_code, 401)
         self.assertIsNone(other.get('/auth/me').get_json()['user'])
         self.assertEqual(self.client.post('/auth/login', json={'email': EMAIL, 'password': PASSWORD}).status_code, 401)
         self.assertEqual(self.client.post('/auth/login', json={'email': EMAIL, 'password': NEW_PASSWORD}).status_code, 200)
@@ -205,13 +205,13 @@ class AccountInfrastructureTests(unittest.TestCase):
                 CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL);
                 INSERT INTO users VALUES (7, 'legacy', 'existing-hash');
                 CREATE TABLE items (id INTEGER PRIMARY KEY, user_id INTEGER, name TEXT);
-                INSERT INTO items VALUES (9, 7, 'Existing todo');
+                INSERT INTO items VALUES (9, 7, 'Legacy item data');
             ''')
             ensure_account_schema(db)
             ensure_account_schema(db)
             self.assertEqual(db.execute('SELECT id, username, password_hash, email, auth_version FROM users').fetchone(),
                              (7, 'legacy', 'existing-hash', None, 0))
-            self.assertEqual(db.execute('SELECT * FROM items').fetchone(), (9, 7, 'Existing todo'))
+            self.assertEqual(db.execute('SELECT * FROM items').fetchone(), (9, 7, 'Legacy item data'))
 
     def test_mail_transport_uses_tls_and_correct_link(self):
         config = {

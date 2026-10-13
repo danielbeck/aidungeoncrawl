@@ -178,18 +178,36 @@ Example proposed change:
 
 ```
 {
-  "type": "add_to_inventory",
-  "item": {
-    "name": "Iron key"
+  "type": "create_item",
+  "payload": {
+    "name": "Iron key",
+    "holder_type": "player"
   }
 }
 ```
+
+The `payload` is a JSON object, not a JSON-encoded string. The narrator's schema
+defines its fields and types so providers can constrain them directly. Existing
+valid string payloads remain readable by the engine, but new narrator responses
+must use objects.
+
+Payloads are validated against the required and allowed fields for their operation.
+Newly acquired portable items are created with `create_item` and
+`holder_type: "player"`; transfers reference an existing item and specify its
+target holder. Ordering or receiving an item does not consume it. A fixture such
+as a tavern bar is an object, not an exit, and a drink is an item, not a location.
 
 The application validates the proposal, assigns or reuses a stable ID, and applies the change if appropriate.
 
 For references to existing entities, responses should use stable IDs whenever available. New entities may initially be referenced by descriptive names, but deterministic code must resolve or assign their IDs before persisting relationships.
 
 Unknown operation types, malformed responses, invalid references, and contradictory state changes must not be applied.
+
+The narrator gets one correction attempt for an invalid response or proposal.
+That call receives the rejected response and validation error along with the
+unchanged original context. The managers are not rerun, and none of the rejected
+operations are committed. If correction fails, return an error with no state
+changes. Provider connection failures do not trigger this correction retry.
 
 
 ## Data model

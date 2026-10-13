@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { fetchAPI, runLLMCall } from './api.js'
+import { fetchAPI, runLLMCall, streamGameTurn } from './api.js'
 
 test('API client preserves authenticated requests and returns JSON', async (t) => {
   t.mock.method(globalThis, 'fetch', async (url, options) => {
@@ -77,6 +77,7 @@ test('runLLMCall posts input and optional history to the named call', async (t) 
     return new Response(JSON.stringify({ data: { title: 'Crypt' }, provider: 'p', model: 'm' }), {
       headers: { 'Content-Type': 'application/json' },
     })
+
   })
 
   assert.deepEqual(await runLLMCall('describe_room', 'a crypt'), {
@@ -89,4 +90,49 @@ test('runLLMCall posts input and optional history to the named call', async (t) 
   assert.equal(requests[0].options.method, 'POST')
   assert.deepEqual(JSON.parse(requests[0].options.body), { input: 'a crypt' })
   assert.deepEqual(JSON.parse(requests[1].options.body), { input: 'a crypt', history })
+})
+
+test('gameplay stream delivers intermediate responses before completion across chunk boundaries', async (t) => {
+  const progress = { type: 'progress', component: 'map', status: 'completed',
+    response: { assessment: 'A cafe is nearby.' } }
+  const data = { game: { id: 'game-1' }, turn: { narration: 'Done.' } }
+  const encoder = new TextEncoder()
+  let streamController
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.ok(url.endsWith('/game/turn'))
+    assert.equal(options.credentials, 'include')
+    assert.equal(options.headers.Accept, 'application/x-ndjson')
+    assert.equal(JSON.parse(options.body).request_id, 'request-1')
+    return new Response(new ReadableStream({
+      start(controller) { streamController = controller },
+    }), { headers: { 'Content-Type': 'application/x-ndjson' } })
+  })
+  const received = []
+  const result = streamGameTurn({ request_id: 'request-1' }, event => {
+    received.push(event)
+    streamController.enqueue(encoder.encode(`${JSON.stringify({ type: 'complete', data })}\n`))
+    streamController.close()
+  })
+  await Promise.resolve()
+  const bytes = encoder.encode(`${JSON.stringify(progress)}\n`)
+  for (const byte of bytes) streamController.enqueue(Uint8Array.of(byte))
+  assert.deepEqual(await result, data)
+  assert.deepEqual(received, [progress])
+})
+
+test('gameplay stream surfaces terminal failures and premature disconnects', async (t) => {
+  t.mock.method(console, 'error', () => {})
+  t.mock.method(globalThis, 'fetch', async () => new Response(
+    `${JSON.stringify({ type: 'error', status: 502, data: { error: 'State not changed.' } })}\n`,
+    { headers: { 'Content-Type': 'application/x-ndjson' } },
+  ))
+  await assert.rejects(streamGameTurn({}, () => {}), /State not changed/)
+  globalThis.fetch = async () => new Response('{"type":"heartbeat"}\n', {
+    headers: { 'Content-Type': 'application/x-ndjson' },
+  })
+  await assert.rejects(streamGameTurn({}, () => {}), /ended before the turn completed/)
+  globalThis.fetch = async () => new Response('{"error":"Authentication required"}', {
+    status: 401, headers: { 'Content-Type': 'application/json' },
+  })
+  await assert.rejects(streamGameTurn({}, () => {}), /Authentication required/)
 })

@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "properties": {
+    "assessment": {
+      "type": "string",
+      "description": "Concise assessment of referenced items, availability, ambiguity, and plausible item consequences."
+    }
+  },
+  "required": ["assessment"],
+  "additionalProperties": false
+}

@@ -31,7 +31,7 @@ class AccountBackportTests(unittest.TestCase):
                 with self.assertRaises(FileNotFoundError):
                     load_session_secret()
 
-    def test_authentication_and_todo_crud_are_preserved(self):
+    def test_authentication_and_authenticated_game_access(self):
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, 'test.db')
             with sqlite3.connect(path) as db:
@@ -58,22 +58,19 @@ class AccountBackportTests(unittest.TestCase):
                 with app.test_client() as client:
                     for endpoint in ['/auth/login', '/auth/register']:
                         self.assertEqual(client.post(endpoint, json={}).status_code, 400)
-                    self.assertEqual(client.get('/items/').status_code, 401)
+                    self.assertEqual(client.get('/game/').status_code, 401)
                     credentials = {'email': 'test-user@example.com', 'password': 'TestPassword123'}
                     self.assertEqual(client.post('/auth/register', json=credentials).status_code, 200)
                     self.assertEqual(client.get('/auth/me').get_json()['user'], 'test-user@example.com')
-                    response = client.post('/items/', json={'name': 'Test todo', 'description': 'Keep items'})
-                    self.assertEqual(response.status_code, 201)
-                    item_id = response.get_json()['id']
-                    self.assertEqual(len(client.get('/items/').get_json()['items']), 1)
-                    self.assertEqual(client.put('/items/{}'.format(item_id), json={'name': 'Updated todo'}).status_code, 200)
-                    self.assertEqual(client.get('/items/{}'.format(item_id)).get_json()['item']['name'], 'Updated todo')
+                    game = client.get('/game/').get_json()['game']
+                    self.assertEqual(game['currentLocationId'], 'town-square-outside-tavern')
+                    self.assertEqual(game['status'], 'active')
+                    self.assertEqual(client.get('/items/').status_code, 404)
                     self.assertEqual(client.post('/auth/logout').status_code, 200)
-                    self.assertEqual(client.get('/items/').status_code, 401)
+                    self.assertEqual(client.get('/game/').status_code, 401)
                     self.assertEqual(client.post('/auth/login', json=credentials).status_code, 200)
-                    self.assertEqual(len(client.get('/items/').get_json()['items']), 1)
-                    self.assertEqual(client.delete('/items/{}'.format(item_id)).status_code, 200)
-                    self.assertEqual(client.get('/items/').get_json()['items'], [])
+                    restored = client.get('/game/').get_json()['game']
+                    self.assertEqual(restored['id'], game['id'])
 
 
 if __name__ == '__main__':

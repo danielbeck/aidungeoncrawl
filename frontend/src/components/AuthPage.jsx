@@ -57,7 +57,7 @@ export default function AuthPage({ onAuth }) {
 
     return (
         <section className="auth-page" aria-labelledby="auth-title">
-            <Link className="auth-back" to="/">Back to your todo list</Link>
+            <Link className="auth-back" to="/">Back to your adventure</Link>
             <header className="auth-heading">
                 <p>Your account</p>
                 <h1 id="auth-title">Come on in.</h1>

@@ -1,0 +1,183 @@
+{
+  "type": "object",
+  "properties": {
+    "narration": {
+      "type": "string",
+      "description": "Player-facing account of the action and its consequences."
+    },
+    "action_succeeded": {
+      "type": "boolean",
+      "description": "Whether the player's intended action succeeded."
+    },
+    "game_over": {
+      "type": "boolean",
+      "description": "True only if the player character died in this action."
+    },
+    "state_changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "create_location",
+              "add_exit",
+              "move_player",
+              "set_exit_traversable",
+              "create_item",
+              "transfer_item",
+              "set_item_status",
+              "create_object",
+              "update_object",
+              "create_npc",
+              "update_npc"
+            ]
+          },
+          "payload": {
+            "type": "object",
+            "description": "An actual JSON object. Fields must match the selected operation. For a newly acquired item use create_item with holder_type player, not create_location or transfer_item.",
+            "properties": {
+              "name": {"type": "string"},
+              "aliases": {"type": "array", "items": {"type": "string"}},
+              "from_location_id": {"type": "string"},
+              "destination_location_id": {"type": ["string", "null"]},
+              "description": {"type": "string"},
+              "traversable": {"type": "boolean"},
+              "location_id": {"type": "string"},
+              "exit_id": {"type": "string"},
+              "known_by_player": {"type": "boolean"},
+              "holder_type": {"type": "string", "enum": ["player", "location", "npc", "object"]},
+              "holder_id": {"type": "string"},
+              "item_id": {"type": "string"},
+              "status": {"type": "string"},
+              "contained_in_object_id": {"type": ["string", "null"]},
+              "state": {"type": "object"},
+              "object_id": {"type": "string"},
+              "current_location_id": {"type": "string"},
+              "npc_id": {"type": "string"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "type": {"enum": ["create_location"], "description": "Create a distinct place the player can enter, never an item such as a beer."},
+              "payload": {
+                "properties": {"name": {}, "aliases": {}},
+                "required": ["name"],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "properties": {
+              "type": {"enum": ["add_exit"]},
+              "payload": {
+                "properties": {"from_location_id": {}, "destination_location_id": {}, "description": {}, "traversable": {}},
+                "required": ["from_location_id", "destination_location_id", "description"],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "properties": {
+              "type": {"enum": ["move_player"]},
+              "payload": {
+                "properties": {"destination_location_id": {"type": "string"}},
+                "required": ["destination_location_id"],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "properties": {
+              "type": {"enum": ["set_exit_traversable"]},
+              "payload": {
+                "properties": {"location_id": {}, "exit_id": {}, "destination_location_id": {}, "traversable": {}},
+                "required": ["location_id", "traversable"],
+                "anyOf": [{"required": ["exit_id"]}, {"required": ["destination_location_id"]}],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "properties": {
+              "type": {"enum": ["create_item"], "description": "Create a new portable item. Set holder_type to player when acquired, received, bought, or ordered."},
+              "payload": {
+                "properties": {"name": {}, "aliases": {}, "known_by_player": {}, "holder_type": {}, "holder_id": {}},
+                "required": ["name", "holder_type"],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "properties": {
+              "type": {"enum": ["transfer_item"], "description": "Change the holder of an item that already exists. Create new items first."},
+              "payload": {
+                "properties": {"item_id": {}, "holder_type": {}, "holder_id": {}},
+                "required": ["item_id", "holder_type"],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "properties": {
+              "type": {"enum": ["set_item_status"]},
+              "payload": {
+                "properties": {"item_id": {}, "status": {"enum": ["consumed", "destroyed"]}},
+                "required": ["item_id", "status"],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "properties": {
+              "type": {"enum": ["create_object"]},
+              "payload": {
+                "properties": {"name": {}, "aliases": {}, "location_id": {}, "contained_in_object_id": {}, "known_by_player": {}, "state": {}},
+                "required": ["name", "location_id"],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "properties": {
+              "type": {"enum": ["update_object"]},
+              "payload": {
+                "properties": {"object_id": {}, "state": {}, "location_id": {}, "status": {"enum": ["present", "destroyed"]}},
+                "required": ["object_id"],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "properties": {
+              "type": {"enum": ["create_npc"]},
+              "payload": {
+                "properties": {"name": {}, "aliases": {}, "current_location_id": {}, "state": {}},
+                "required": ["name", "current_location_id"],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "properties": {
+              "type": {"enum": ["update_npc"]},
+              "payload": {
+                "properties": {"npc_id": {}, "status": {"enum": ["active", "offstage", "dead", "removed"]}, "current_location_id": {}, "state": {}},
+                "required": ["npc_id"],
+                "additionalProperties": false
+              }
+            }
+          }
+        ],
+        "required": ["type", "payload"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["narration", "action_succeeded", "game_over", "state_changes"],
+  "additionalProperties": false
+}

@@ -102,6 +102,42 @@ class LLMCallTests(unittest.TestCase):
         self.assertEqual(result.provider, 'fake')
         self.assertIsNone(transport.calls[0]['schema'])
 
+    def test_logs_start_and_raw_response_before_validation_failure(self):
+        call = DescribeRoomCall(transport=FakeTransport('not valid JSON'))
+        with self.assertLogs('backend.llm_calls.base', level='INFO') as logs:
+            with self.assertRaises(LLMResponseError):
+                call.run('a crypt')
+        self.assertIn('started', logs.output[0])
+        self.assertIn('describe_room', logs.output[0])
+        self.assertIn('response', logs.output[1])
+        self.assertIn('not valid JSON', logs.output[1])
+        self.assertIn('fake-model', logs.output[1])
+        self.assertIn('failed', logs.output[2])
+
+    def test_logs_transport_failure_and_preserves_exception(self):
+        error = llm_provider.LLMError('provider unavailable')
+
+        def transport(messages, schema, schema_name):
+            raise error
+
+        with self.assertLogs('backend.llm_calls.base', level='INFO') as logs:
+            with self.assertRaises(llm_provider.LLMError) as raised:
+                EchoCall(transport=transport).run('hello')
+        self.assertIs(raised.exception, error)
+        self.assertIn('started', logs.output[0])
+        self.assertIn('failed', logs.output[1])
+        self.assertIn('provider unavailable', logs.output[1])
+
+    def test_success_logs_share_a_call_id_and_mark_truncated_responses(self):
+        raw = 'x' * 32769
+        with self.assertLogs('backend.llm_calls.base', level='INFO') as logs:
+            result = EchoCall(transport=FakeTransport(raw)).run('hello')
+        self.assertEqual(result.raw, raw)
+        self.assertEqual(result.data, raw)
+        self.assertEqual(len(logs.records), 2)
+        self.assertEqual(logs.records[0].args[1], logs.records[1].args[1])
+        self.assertIn('[truncated; 32769 characters total]', logs.output[1])
+
     def test_history_is_inserted_between_system_prompt_and_user_input(self):
         transport = FakeTransport('ok')
         history = MessageHistory().add('user', 'earlier question').add('assistant', 'earlier answer')

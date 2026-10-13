@@ -20,7 +20,7 @@ export default function ProfilePage({ user, onLogout }) {
   }
 
   return <section className="auth-page" aria-labelledby="profile-title">
-    <Link className="auth-back" to="/">Back to your todo list</Link>
+    <Link className="auth-back" to="/">Back to your adventure</Link>
     <header className="auth-heading">
       <p>Your account</p>
       <h1 id="profile-title">Your profile.</h1>

@@ -1,14 +1,14 @@
-# react-python-sqlite-boilerplate
+# AI Dungeon Crawl
 
-A small React frontend paired with a Python/Flask backend (SQLite) — configured to run locally for development and as a CGI-backed app on shared hosting.
-
-THe backend currently contains a demo "Todo List" app, as is traditional.
+A text-based fantasy adventure built with React, Flask, and SQLite. The Dungeon
+Master interprets free-text player actions and proposes narrative/world changes;
+the backend validates and persists the canonical game state.
 
 Modify .env to deploy to different subdirectories or domains (see .env.example)
 
 ## Quick links
 - Backend: backend/app.py
-- DB schema + sample data: backend/init_db.py
+- DB initialization: backend/init_db.py
 - Deploy script: deploy.sh
 - Config: .env (template: .env.example)
 
@@ -22,9 +22,8 @@ Backend (development)
 
 ```bash
 cd backend
-# optional: python3 -m venv .venv && source .venv/bin/activate
 pip3 install -r requirements.txt
-python3 init_db.py    # creates database/app.db and sample items
+python3 init_db.py
 DEBUG=1 python3 app.py
 ```
 
@@ -40,17 +39,12 @@ npm run dev
 
 Dev frontend runs on http://localhost:3000 and proxies API requests to the backend.  `npm run dev` will also start the backend server.
 
-## API (current)
+## Gameplay API
 
-- GET / — root info
-- GET /items — list items (returns `{ items: [...] }`)
-- POST /items — create item (JSON body with `name`, optional `description`)
-- GET /items/<id> — fetch item
-- PUT /items/<id> — update item
-- DELETE /items/<id> — delete item
-
-
-See `backend/app.py` for authoritative endpoint behavior.
+- `GET /game/` — load or initialize the authenticated user's adventure
+- `POST /game/new` — start a new adventure
+- `POST /game/turn` — process a free-text action (`action`, `game_id`, `request_id`)
+- `POST /game/stop` — end the current adventure
 
 ## Account pages
 
@@ -58,9 +52,9 @@ The header profile icon links to `/auth` for guests and `/profile` for logged-in
 users. Login/register tabs share responsive card styling, labeled fields,
 keyboard navigation, submission states, and API error messages. The profile
 page displays the email address and a styled Log out button. Logout failures retain
-the account and show an error; successful logout clears displayed todos and
-returns home. Direct profile visits wait for authentication before redirecting
-guests. The todo list and its item endpoints remain unchanged.
+the account and show an error; successful logout returns home. Direct profile
+visits wait for authentication before redirecting guests. The adventure remains
+saved when the player logs out.
 
 Login and registration use email addresses. The "Forgot my password" link opens
 an email request form; emailed single-use links let users enter and confirm a new
@@ -72,7 +66,7 @@ create new email-based accounts.
 ## Database
 
 SQLite DB: `backend/database/app.db`.
-To initialize or reset sample data:
+To initialize the account database:
 
 ```bash
 python3 backend/init_db.py
@@ -101,10 +95,10 @@ cp .env.example .env
   see [backend/README.md](backend/README.md).
 - Installs backend Python dependencies in a virtual environment (if not already present).
 - Initializes the backend database **only if** this is the first deploy (i.e., the backend directory did not previously exist).
-- Does **not** overwrite an existing database or sample data on redeploys.
+- Does **not** overwrite an existing database on redeploys.
 - Applies additive account-schema migrations on every deploy.
 
-### Force Fresh Deploy (reset database/sample data)
+### Force Fresh Deploy (reset database)
 
 ```bash
 ./deploy.sh --force-fresh
@@ -112,7 +106,7 @@ cp .env.example .env
 - Performs all steps of a standard deploy.
 - **Always** (re)initializes the backend database by running `init_db.py` on the server, even if the backend directory already exists.
 - This deletes the existing database before initialization. All accounts and
-  todos are lost; do not use this flag for routine redeploys.
+  adventures are lost; do not use this flag for routine redeploys.
 
 **Note:**
 - The deploy script uses SSH and rsync. You must have SSH access to the configured host.
