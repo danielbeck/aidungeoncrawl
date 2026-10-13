@@ -1,34 +1,171 @@
-This is a simulated game of Dungeons and Dragons.
+# Product Spec
 
-The user interface is simple. The game tells the 
-player where they are and what is happening. The player tells the game, in text, what they want to do.  The game decides whether that's possible, decides what should happen, and tells the user what happened.  This cycle continues until the player's character dies or the player stops playing.
+## Overview
 
-Some of this will be LLM driven.  The supplied repo contains sample backend code for connecting to an LLM and receiving a response; use those as a model for implementing this game.
+This is a simulated, text-based Dungeons & Dragons–style adventure. The LLM acts as the Dungeon Master, describing the world, interpreting player actions, and advancing an interesting, internally consistent story.
 
+The user interface is simple:
+
+1. The game describes the player's current situation.
+2. The player enters a free-text description of what they want to do.
+3. The game determines what the player intended, whether the action is possible, and what consequences follow.
+4. The game updates its state and narrates the outcome.
+5. This cycle continues until the player stops playing or the character dies.
+
+The game should be flexible enough to support creative, unanticipated player actions. It should not require the player to choose from a predefined set of commands.
+
+Some decisions will be LLM-driven; others will be handled by deterministic code. The LLM narrator proposes changes to game state; the deterministic code persists them and provides that data for future context.
+
+The supplied repository contains sample backend code for connecting to an LLM and receiving a response. Use this as the starting point for the implementation, preserving existing working functionality where practical.
+
+## Gameplay
+
+### General principles
+
+* There are no required tabletop gaming rules, character statistics, dice mechanics, or combat systems.
+* The narrator should create an interesting, coherent, responsive storyline based on the player's actions.
+* The player may attempt any action they can describe in natural language.
+* Actions should have plausible consequences consistent with the established world and previous events.
+* The game should distinguish between what is possible, what is plausible but uncertain, and what is impossible given established facts.
+* The game should not arbitrarily reject creative actions simply because they were not anticipated by the implementation.
+* Failed actions should still advance the narrative where appropriate. The narrator should explain what happened in character rather than returning a generic error.
+* The game should not silently change established facts merely to accommodate a new action.
+* The game should maintain continuity across turns, including the identity and state of previously encountered locations, items, and NPCs.
+
+### Starting state
+
+Every new game starts in the location identified by the stable ID `town-square-outside-tavern`, displayed as "Town Square Outside the Tavern".
+
+The initial inventory is empty. The game may establish reasonable starting equipment as it becomes relevant to the narrative. For example, when the player attempts to draw their sword, the game may establish that the character possesses a sword, add it to inventory, and continue the action.
+
+The game should not require an elaborate character-creation process.
+
+### Narrative freedom and consistency
+
+The LLM may introduce new locations, objects, NPCs, and events when appropriate. Once introduced and accepted into the game state, these entities must be tracked by deterministic code.
+
+The LLM may elaborate on established facts but should not contradict them without an explicit narrative event that explains the change.
+
+For example, a previously established locked door should not become an open archway simply because the narrator generates a different description of the room.
 
 ## Responsibilities
 
-### Locations
-The game should always start at the same location, "town square outside the tavern". 
+### Locations and map
 
-New locations can be added narratively, if the LLM decides to allow it.  (For example, "enter the tavern" from the default location outside the tavern should obviously take the user to a new location.)
+The game begins at a fixed starting location.
 
-The "map" of existing locations should be kept track of in deterministic code.
+The map is a graph of locations and their exits. Each location has a stable ID and a display name. Exits connect locations using stable IDs rather than display names.
 
-The LLM needs a way to communicate to the deterministic code when the map should change (e.g. by adding a new location, or by an exit closing off for narrative reasons.)
+New locations may be introduced as the story progresses. The LLM can propose a new location when an action implies entering a previously unidentified place, such as entering the tavern from the town square.
 
-The descriptions of locations shouldn't necessarily be preserved verbatim; the same location may be described differently depending on the current point in the narrative, but the previously identified exits should still generally persist and should continue pointing to the same named location.
+The deterministic game engine maintains the map and applies approved changes to it.
 
-### Items
-The player's inventory is not defined at first, but should grow as a result of the narrative.  The player is assumed to be a reasonably equipped low level character at first, so commands like "draw my sword" should result in the sword being added to the player's inventory list for later reference.
+The map should distinguish between:
 
-An LLM should be responsible for determining, based on the player's existing inventory, location, and the narrative as a whole, whether any given item should be added to or removed from the player's inventory. 
+* Locations that have been identified by the game.
+* Locations the player has visited.
+* Exits that have been identified.
+* Exits that are currently traversable.
+* Exits whose destinations have not yet been identified.
 
-The inventory list itself, the array of already-identified items, should be managed in deterministic code.
+An exit should generally continue pointing to the same location once established. Its description and traversability may change when justified by narrative events.
 
-The LLM needs a way to communicate to the deterministic code when the inventory list should change (by adding or removing an item).
+The same location may be described differently on different turns. Its narrative description is not the authoritative representation of its identity, exits, or persistent object state.
+
+The LLM must communicate proposed map changes in a structured format. It must not directly modify the map.
+
+### Items and inventory
+
+The inventory is an array of identified items currently carried by the player.
+
+Items are not predefined. They may be introduced by the narrative, discovered in locations, acquired from NPCs, created, consumed, lost, or otherwise changed as the story progresses.
+
+The inventory manager determines how a player's intended action relates to existing items and whether an item needs to be established as available.
+
+For example:
+
+* "Draw my sword" may establish a sword in the player's inventory if no sword has been identified yet.
+* "Pick up the silver key" may acquire an existing item in the current location.
+* "Give the guard my torch" may transfer an item out of the player's inventory.
+* "Drink the potion" may consume a potion if one is present.
+* "Use the key I found earlier" may refer to an existing item by its established identity.
+
+The game must distinguish between an item that exists in the world, an item the player knows about, and an item the player possesses.
+
+The LLM may propose creating, acquiring, transferring, or removing an item. Deterministic code validates and applies these changes.
+
+An item should retain its identity across turns even if the narrator uses different words to describe it. For example, "iron key", "the key", and "the key I found in the hallway" may all refer to the same item.
+
+When a reference is ambiguous, the game should resolve it from context when possible and ask for clarification when necessary.
+
+The game should not create duplicate items simply because the player or narrator uses different names for the same item.
+
+### Objects in locations
+
+Locations may contain objects that are not in the player's inventory. These include furniture, containers, doors, scenery, treasures, and other interactive objects.
+
+Objects may be introduced as part of a location's initial description or discovered through player actions.
+
+The game should track relevant persistent object state. Examples include:
+
+* A chest that is locked or unlocked.
+* A door that is open or closed.
+* A container whose contents have been revealed.
+* An object that has been taken, destroyed, or moved.
+
+Objects do not all need to be individually modeled. The implementation should track objects that affect future actions or narrative consistency and allow the narrator to describe incidental scenery without persisting every detail.
+
+An object discovered in a location should retain its identity and state when the player leaves and returns.
 
 ### NPCs
-Each location might have zero or more NPC characters in it.  As with items and locations, these can be conjured into existence if the narrative calls for it. (For example if a player is in the tavern and orders a beer, the narrative might create a barkeep or serving wench who should persist at least as long as the player remains in that location. Unless they're removed by other narrative means, of course.)
 
-As with items, these are not defined at first but should be kept track of in deterministic code after the narrative has identified them.
+Each location may contain zero or more identified NPCs.
+
+NPCs can be introduced when the narrative calls for them. For example, ordering a beer in the tavern may introduce a barkeep.
+
+NPCs should be associated with stable IDs and tracked in deterministic code. Their location, identity, and relevant persistent state should be maintained across turns.
+
+NPCs may move between locations, leave the game world, or die as a result of narrative events.
+
+The NPC manager determines whether a referenced character corresponds to an existing NPC, whether a new NPC should be introduced, and whether an NPC should be moved or removed.
+
+An NPC who leaves a location should not automatically cease to exist. Removal from a location and removal from the game world are distinct operations.
+
+The game should avoid creating duplicate NPCs when a character is referred to by a different name or description.
+
+### Narrative history
+
+The game maintains a record of player actions, narrative responses, and significant world events.
+
+This history provides context for interpreting ambiguous references and maintaining narrative continuity. It is not the authoritative source of current inventory, location, or object state.
+
+The history should retain recent exchanges in full and periodically summarize older narrative material to control context size.
+
+The game should preserve important established facts, discoveries, promises, relationships, unresolved conflicts, and other information likely to affect future turns.
+
+The summarizer may compress the narrative but must not invent events or change established facts.
+
+### Character death and game termination
+
+The game may end when the narrative establishes that the player character has died, or when the player chooses to stop playing.
+
+There is no requirement for a detailed combat or health system. Character death is a narrative state that must be recorded deterministically once accepted by the game engine.
+
+When the game ends, the interface should display the final narrative response and stop accepting further gameplay actions for that session unless a future feature explicitly supports restarting or continuing.
+
+## Initial implementation scope
+
+The initial implementation should prioritize a working end-to-end gameplay loop over comprehensive world simulation.
+
+The first version should support:
+
+* Starting a new game in the fixed starting location.
+* Free-text player input.
+* LLM-driven interpretation and narration.
+* Deterministic inventory and location tracking.
+* Creation and reuse of locations, items, and NPCs.
+* Persistent object state where relevant.
+* Structured event history and narrative summarization.
+* Graceful handling of failed or invalid model responses.
+
+Avoid implementing combat statistics, dice mechanics, complex NPC simulation, or a general-purpose rules engine.
