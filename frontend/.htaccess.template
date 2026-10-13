@@ -1,0 +1,11 @@
+# Serve SPA entry for all 404s (workaround for host-branded error pages)
+ErrorDocument 404 __ERROR_DOC_PATH__
+# Vite/React SPA: Redirect all non-file requests to index.html for client-side routing
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase __REWRITE_BASE__
+  # Only rewrite if the requested file or directory does not exist
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^.*$ index.html [L]
+</IfModule>

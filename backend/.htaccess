@@ -1,0 +1,8 @@
+# Enable CGI execution
+AddHandler cgi-script .cgi
+Options +ExecCGI
+
+# Protect database
+<Files "*.db">
+    Require all denied
+</Files>

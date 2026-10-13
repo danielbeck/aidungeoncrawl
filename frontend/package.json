@@ -1,0 +1,29 @@
+{
+  "name": "react-python-sqlite-boilerplate-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "NODE_ENV=development npm run generate-config && npm-run-all --parallel vite backend",
+    "vite": "vite",
+    "backend": "cd ../backend && python3 app.py",
+    "build": "vite build",
+    "prebuild": "node generate-config.js",
+    "predev": "node generate-config.js",
+    "preview": "vite preview",
+    "generate-config": "node generate-config.js"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "dotenv": "^17.2.4",
+    "npm-run-all": "^4.1.5",
+    "sass": "^1.69.5",
+    "vite": "^6.0.3"
+  }
+}

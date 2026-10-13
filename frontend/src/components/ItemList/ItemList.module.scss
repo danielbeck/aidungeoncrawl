@@ -1,0 +1,31 @@
+.itemList {
+    margin: 2rem auto 0 auto;
+    max-width: 600px;
+    padding: 1rem;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.name {
+    font-weight: bold;
+}
+
+.description {
+    color: #666;
+    margin-left: 0.5rem;
+}
+
+.deleteButton {
+    margin-left: 1rem;
+    color: #c00;
+    background: none;
+    border: none;
+    cursor: pointer;
+}
