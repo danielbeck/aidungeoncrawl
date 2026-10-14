@@ -8,10 +8,10 @@ import uuid
 from flask import Blueprint, Response, current_app, jsonify, request, session
 
 try:
-    from backend.game_engine import InvalidProposal, new_game, process_turn
+    from backend.game_engine import InvalidTurnResponse, new_game, process_turn
     from backend.llm_provider import LLMError
 except ImportError:
-    from game_engine import InvalidProposal, new_game, process_turn
+    from game_engine import InvalidTurnResponse, new_game, process_turn
     from llm_provider import LLMError
 
 
@@ -224,9 +224,9 @@ def _complete_turn(user_id, game_id, request_id, action, original_state,
     except LLMError as error:
         current_app.logger.error('LLM gameplay turn failed for user %s: %s', user_id, error)
         return jsonify({'error': 'The game could not complete that turn. Your state was not changed.'}), 502
-    except InvalidProposal as error:
-        current_app.logger.warning('Rejected gameplay proposal for user %s: %s', user_id, error)
-        return jsonify({'error': 'The game received an invalid state proposal. Your state was not changed.'}), 502
+    except InvalidTurnResponse as error:
+        current_app.logger.warning('Rejected gameplay response for user %s: %s', user_id, error)
+        return jsonify({'error': 'The game returned invalid turn data. Your state was not changed.'}), 502
     except (KeyError, TypeError, ValueError) as error:
         current_app.logger.exception('Invalid gameplay response for user %s: %s', user_id, error)
         return jsonify({'error': 'The game returned an invalid response. Your state was not changed.'}), 502

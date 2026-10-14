@@ -1,12 +1,14 @@
-You assess how the player's action relates to known items and persistent objects.
-Use the supplied authoritative state, location, inventory, and history to identify
-whether items referenced in the player's action are available, and whether they refer to newly identified items or to already-identified persistent items.
+Identify only items and objects relevant to the player's action. Use the
+supplied current location, carried_items, items_here, objects_here, and
+recent_history. History is only for immediate continuity; ignore NPC
+motivations, dialogue, map details, and other non-item story.
 
-A low-level character may reasonably own ordinary starting equipment when an action first establishes it, but a valuable or specific item must have a narrative basis. 
+Return only this JSON object:
+{"items":[{"name":"iron key","description":"A small iron key","interaction":"use"}]}
 
-Animals and mounts belong to NPC state, not inventory or objects. 
-
-Return a concise assessment that the narrator can use. The deterministic engine
-owns item and object state. For each item mentioned, be specific as to whether it is new or references an existing item (in which case identify it by ID).
-
-Focus exclusively on inventory management; other agents will be considering other factors. Do not consider locations or other characters.
+Each item must be relevant to the action and have a natural-language name,
+objective description, and one interaction: mentioned, search, inspect, use,
+acquire, give, consume, drop, or unclear. Return an empty list when no item or
+object is relevant. Do not describe character motivations, NPC behavior,
+movement, or general story. Never include IDs, state, availability claims,
+prose assessments, or extra fields. Do not treat an animal or mount as an item.

@@ -74,19 +74,21 @@ test('runLLMCall posts input and optional history to the named call', async (t) 
   const requests = []
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     requests.push({ url, options })
-    return new Response(JSON.stringify({ data: { title: 'Crypt' }, provider: 'p', model: 'm' }), {
+    return new Response(JSON.stringify({
+      data: { already_present: true }, provider: 'p', model: 'm',
+    }), {
       headers: { 'Content-Type': 'application/json' },
     })
 
   })
 
-  assert.deepEqual(await runLLMCall('describe_room', 'a crypt'), {
-    data: { title: 'Crypt' }, provider: 'p', model: 'm',
+  assert.deepEqual(await runLLMCall('comparator', 'a crypt'), {
+    data: { already_present: true }, provider: 'p', model: 'm',
   })
   const history = [{ role: 'user', content: 'hi' }]
-  await runLLMCall('describe_room', 'a crypt', history)
+  await runLLMCall('comparator', 'a crypt', history)
 
-  assert.ok(requests[0].url.endsWith('/llm/calls/describe_room'))
+  assert.ok(requests[0].url.endsWith('/llm/calls/comparator'))
   assert.equal(requests[0].options.method, 'POST')
   assert.deepEqual(JSON.parse(requests[0].options.body), { input: 'a crypt' })
   assert.deepEqual(JSON.parse(requests[1].options.body), { input: 'a crypt', history })
@@ -94,7 +96,9 @@ test('runLLMCall posts input and optional history to the named call', async (t) 
 
 test('gameplay stream delivers intermediate responses before completion across chunk boundaries', async (t) => {
   const progress = { type: 'progress', component: 'map', status: 'completed',
-    response: { assessment: 'A cafe is nearby.' } }
+    response: { locations: [{
+      name: 'Cafe', description: 'A small cafe nearby.', interaction: 'approach',
+    }] } }
   const data = { game: { id: 'game-1' }, turn: { narration: 'Done.' } }
   const encoder = new TextEncoder()
   let streamController

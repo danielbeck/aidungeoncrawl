@@ -118,9 +118,6 @@ function GamePage() {
 
       <div className={styles.layout}>
         <div className={styles.story}>
-          {game.history.summary && <aside className={styles.summary}>
-            <h3>Previously</h3><p>{game.history.summary}</p>
-          </aside>}
           <ol className={styles.events} aria-live="polite">
             {game.history.recentEvents.map((event, index) => (
               <li key={`${index}-${event.kind}`} className={event.kind === 'player_action' ? styles.playerEvent : styles.narrationEvent}>
@@ -137,20 +134,18 @@ function GamePage() {
                 <li key={index}>
                   <strong>{({
                     inventory: 'Inventory manager', map: 'Map manager', npcs: 'NPC manager',
-                    narrator: 'Dungeon Master', summarizer: 'History summary', turn: 'Turn',
+                    narrator: 'Dungeon Master', turn: 'Turn',
                   })[event.component] || event.component}</strong>
                   {' — '}{event.status}{event.attempt ? ` (attempt ${event.attempt})` : ''}
                   {event.provider && <small>{' '}{event.provider}/{event.model}</small>}
-                  {event.response && <pre>{event.response.assessment
-                    || event.response.narration
-                    || event.response.summary
+                  {event.response && <pre>{event.response.narration
                     || JSON.stringify(event.response, null, 2)}</pre>}
                   {event.component === 'narrator' && event.response && <details>
-                    <summary>State-change debug details</summary>
+                    <summary>Notable-entity debug details</summary>
                     <pre>{JSON.stringify({
                       action_succeeded: event.response.action_succeeded,
                       game_over: event.response.game_over,
-                      state_changes: event.response.state_changes,
+                      notable_elements: event.response.notable_elements,
                     }, null, 2)}</pre>
                   </details>}
                   {event.error && <p className={styles.error}>{event.error}</p>}

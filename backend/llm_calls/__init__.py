@@ -9,31 +9,27 @@
 The frontend imports schemas via `@shared/llm/<name>.json`.
 
 Usage:
-    room = DescribeRoomCall(settings=app.config['llm_settings']).run('a flooded crypt')
-    room.data['title']
+    result = NarratorCall(settings=app.config['llm_settings']).run('The player opens a door')
+    result.data['narration']
 """
 try:
     from backend.llm_calls.base import LLMCall, LLMResponseError, LLMResult
-    from backend.llm_calls.describe_room import DescribeRoomCall
     from backend.llm_calls.gameplay import (
-        InventoryManagerCall, MapManagerCall, NPCManagerCall, NarratorCall, SummarizerCall,
+        ComparatorCall, InventoryManagerCall, MapManagerCall, NPCManagerCall, NarratorCall,
     )
     from backend.llm_calls.history import MessageHistory
 except ImportError:
     from llm_calls.base import LLMCall, LLMResponseError, LLMResult
-    from llm_calls.describe_room import DescribeRoomCall
     from llm_calls.gameplay import (
-        InventoryManagerCall, MapManagerCall, NPCManagerCall, NarratorCall, SummarizerCall,
+        ComparatorCall, InventoryManagerCall, MapManagerCall, NPCManagerCall, NarratorCall,
     )
     from llm_calls.history import MessageHistory
 
 REGISTRY = {call.name: call for call in (
-    DescribeRoomCall, InventoryManagerCall, MapManagerCall, NPCManagerCall,
-    NarratorCall, SummarizerCall,
+    ComparatorCall, InventoryManagerCall, MapManagerCall, NPCManagerCall, NarratorCall,
 )}
 
 __all__ = [
-    'LLMCall', 'LLMResponseError', 'LLMResult', 'DescribeRoomCall', 'MessageHistory',
-    'InventoryManagerCall', 'MapManagerCall', 'NPCManagerCall', 'NarratorCall',
-    'SummarizerCall', 'REGISTRY',
+    'LLMCall', 'LLMResponseError', 'LLMResult', 'MessageHistory', 'ComparatorCall',
+    'InventoryManagerCall', 'MapManagerCall', 'NPCManagerCall', 'NarratorCall', 'REGISTRY',
 ]

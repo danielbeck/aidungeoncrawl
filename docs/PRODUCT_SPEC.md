@@ -72,7 +72,9 @@ An exit should generally continue pointing to the same location once established
 
 The same location may be described differently on different turns. Its narrative description is not the authoritative representation of its identity, exits, or persistent object state.
 
-The LLM must communicate proposed map changes in a structured format. It must not directly modify the map.
+The current turn contract only registers notable location identities. It does
+not create exits or move the player; those map effects require a future
+deterministic rule.
 
 ### Items and inventory
 
@@ -80,7 +82,12 @@ The inventory is an array of identified items currently carried by the player.
 
 Items are not predefined. They may be introduced by the narrative, discovered in locations, acquired from NPCs, created, consumed, lost, or otherwise changed as the story progresses.
 
-The inventory manager determines how a player's intended action relates to existing items and whether an item needs to be established as available.
+The inventory manager determines which items are relevant to the action. The
+current turn contract adds an unmatched notable item to the player's inventory;
+it does not transfer or consume an existing item.
+
+The following interaction examples describe future gameplay effects beyond the
+current identity-only turn contract:
 
 For example:
 
@@ -90,9 +97,13 @@ For example:
 * "Drink the potion" may consume a potion if one is present.
 * "Use the key I found earlier" may refer to an existing item by its established identity.
 
-The game must distinguish between an item that exists in the world, an item the player knows about, and an item the player possesses.
+The game should distinguish between an item that exists in the world, an item
+the player knows about, and an item the player possesses as future gameplay
+effects are introduced.
 
-The LLM may propose creating, acquiring, transferring, or removing an item. Deterministic code validates and applies these changes.
+LLMs do not propose state changes. Identity matching may create a new item
+record, while transfer, consumption, loss, and other changes are not supported
+by the current turn contract.
 
 An item should retain its identity across turns even if the narrator uses different words to describe it. For example, "iron key", "the key", and "the key I found in the hallway" may all refer to the same item.
 
@@ -139,11 +150,9 @@ The game maintains a record of player actions, narrative responses, and signific
 
 This history provides context for interpreting ambiguous references and maintaining narrative continuity. It is not the authoritative source of current inventory, location, or object state.
 
-The history should retain recent exchanges in full and periodically summarize older narrative material to control context size.
-
-The game should preserve important established facts, discoveries, promises, relationships, unresolved conflicts, and other information likely to affect future turns.
-
-The summarizer may compress the narrative but must not invent events or change established facts.
+The history is a simple ordered record of player actions and narrator responses.
+It is passed to the managers and narrator to support continuity. Do not
+automatically summarize or compact older exchanges.
 
 ### Character death and game termination
 
@@ -162,11 +171,10 @@ The first version should support:
 * Starting a new game in the fixed starting location.
 * Free-text player input.
 * LLM-driven interpretation and narration.
-* Deterministic inventory and location tracking.
-* Creation and reuse of locations, items, and NPCs.
-* Persistent object state where relevant.
-* Structured event history and narrative summarization.
+* Deterministic identity reconciliation for inventory items, locations, and NPCs.
+* Creation and reuse of entity records without LLM-generated IDs.
+* A simple ordered history of player actions and narrator responses.
+* Preservation and display of existing persistent object records.
 * Graceful handling of failed or invalid model responses.
 
 Avoid implementing combat statistics, dice mechanics, complex NPC simulation, or a general-purpose rules engine.
-

@@ -1,11 +1,50 @@
 {
   "type": "object",
   "properties": {
-    "assessment": {
-      "type": "string",
-      "description": "Concise assessment of referenced NPCs and justified NPC changes."
+    "npcs": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "interaction": {
+            "type": "string",
+            "enum": [
+              "mentioned",
+              "speak",
+              "ask",
+              "offer",
+              "receive",
+              "follow",
+              "help",
+              "threaten",
+              "attack",
+              "encounter",
+              "unclear"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "interaction"
+        ],
+        "additionalProperties": false
+      }
     }
   },
-  "required": ["assessment"],
+  "required": [
+    "npcs"
+  ],
   "additionalProperties": false
 }

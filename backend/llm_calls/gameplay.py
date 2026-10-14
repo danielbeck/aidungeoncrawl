@@ -5,120 +5,123 @@ except ImportError:
     from llm_calls.base import LLMCall, LLMResponseError
 
 
+def _validate_entity_interactions(data, field, allowed_interactions, call_name):
+    if not isinstance(data, dict) or set(data) != {field}:
+        raise LLMResponseError(
+            f'{call_name}: response must contain only {field}.', details=data)
+
+    interactions = data[field]
+    if not isinstance(interactions, list) or len(interactions) > 20:
+        raise LLMResponseError(
+            f'{call_name}: {field} must be a list of at most 20 entities.', details=data)
+
+    for index, entry in enumerate(interactions, 1):
+        if not isinstance(entry, dict) or set(entry) != {'name', 'description', 'interaction'}:
+            raise LLMResponseError(
+                f'{call_name}: {field} entry {index} must contain only name, description, '
+                'and interaction.', details=data)
+        if any(not isinstance(entry[key], str) or not entry[key].strip()
+               or len(entry[key].strip()) > 1000 for key in ('name', 'description')):
+            raise LLMResponseError(
+                f'{call_name}: {field} entry {index} needs non-empty name and description.',
+                details=data)
+        if entry['interaction'] not in allowed_interactions:
+            raise LLMResponseError(
+                f'{call_name}: {field} entry {index} has an invalid interaction.',
+                details=data)
+    return data
+
+
 class InventoryManagerCall(LLMCall):
     name = 'inventory_manager'
 
     def format_user_input(self, user_input):
-        return f'Assess the action in this game context:\n{user_input}'
+        return f'Classify only item and object interactions in this game context:\n{user_input}'
 
     def validate_response(self, data):
-        if not isinstance(data.get('assessment'), str) or not data['assessment'].strip():
-            raise LLMResponseError('inventory_manager: assessment must be non-empty text.', details=data)
-        return data
+        return _validate_entity_interactions(
+            data, 'items',
+            ('mentioned', 'search', 'inspect', 'use', 'acquire', 'give', 'consume', 'drop', 'unclear'),
+            self.name,
+        )
 
 
 class MapManagerCall(LLMCall):
     name = 'map_manager'
 
     def format_user_input(self, user_input):
-        return f'Assess movement and map implications in this game context:\n{user_input}'
+        return f'Classify only location and movement interactions in this game context:\n{user_input}'
 
     def validate_response(self, data):
-        if not isinstance(data.get('assessment'), str) or not data['assessment'].strip():
-            raise LLMResponseError('map_manager: assessment must be non-empty text.', details=data)
-        return data
+        return _validate_entity_interactions(
+            data, 'locations',
+            ('mentioned', 'remain', 'approach', 'enter', 'leave', 'travel', 'discover', 'unclear'),
+            self.name,
+        )
 
 
 class NPCManagerCall(LLMCall):
     name = 'npc_manager'
 
     def format_user_input(self, user_input):
-        return f'Assess NPC references and changes in this game context:\n{user_input}'
+        return f'Classify only interactions with NPCs in this game context:\n{user_input}'
 
     def validate_response(self, data):
-        if not isinstance(data.get('assessment'), str) or not data['assessment'].strip():
-            raise LLMResponseError('npc_manager: assessment must be non-empty text.', details=data)
-        return data
+        return _validate_entity_interactions(
+            data, 'npcs',
+            ('mentioned', 'speak', 'ask', 'offer', 'receive', 'follow', 'help',
+             'threaten', 'attack', 'encounter', 'unclear'),
+            self.name,
+        )
 
 
 class NarratorCall(LLMCall):
     name = 'game_narrator'
 
     def format_user_input(self, user_input):
-        return f'Resolve the player action and return narration and state proposals:\n{user_input}'
+        return f'Resolve the player action and return narration and notable entities:\n{user_input}'
 
     def validate_response(self, data):
-        if not isinstance(data.get('narration'), str) or not data['narration'].strip():
+        if set(data) != {'narration', 'action_succeeded', 'game_over', 'notable_elements'}:
+            raise LLMResponseError(
+                'game_narrator: response must contain only narration, action_succeeded, '
+                'game_over, and notable_elements.', details=data)
+        if not isinstance(data['narration'], str) or not data['narration'].strip():
             raise LLMResponseError('game_narrator: narration must be non-empty text.', details=data)
-        if not isinstance(data.get('state_changes'), list):
-            raise LLMResponseError('game_narrator: state_changes must be a list.', details=data)
-        operation_schema = self.response_format['properties']['state_changes']['items']
-        payload_schema = operation_schema['properties']['payload']
-        for index, operation in enumerate(data['state_changes'], 1):
-            if not isinstance(operation, dict) or set(operation) != {'type', 'payload'}:
-                raise LLMResponseError('game_narrator: each operation needs type and payload.', details=data)
-            payload = operation['payload']
-            if not isinstance(payload, dict):
-                raise LLMResponseError('game_narrator: payload must be a JSON object, not a string.', details=data)
-            contract = next((variant['properties']['payload']
-                             for variant in operation_schema['anyOf']
-                             if operation['type'] in variant['properties']['type']['enum']), None)
-            if contract is None:
-                raise LLMResponseError(
-                    f'game_narrator: operation {index} has an unknown type.', details=data)
-            missing = sorted(set(contract['required']) - set(payload))
-            unexpected = sorted(set(payload) - set(contract['properties']))
-            if missing or unexpected:
-                raise LLMResponseError(
-                    f"game_narrator: operation {index} ({operation['type']}) payload "
-                    f"missing required fields {missing}; unexpected fields {unexpected}.",
-                    details=data)
-            if 'anyOf' in contract and not any(
-                    all(key in payload for key in option['required'])
-                    for option in contract['anyOf']):
-                raise LLMResponseError(
-                    f'game_narrator: operation {index} needs exit_id or destination_location_id.',
-                    details=data)
-            for key, value in payload.items():
-                field_schema = payload_schema['properties'].get(key)
-                if field_schema is None:
-                    raise LLMResponseError(f'game_narrator: unknown payload field {key}.', details=data)
-                allowed = field_schema['type']
-                allowed = allowed if isinstance(allowed, list) else [allowed]
-                actual = (
-                    'null' if value is None else
-                    'boolean' if isinstance(value, bool) else
-                    'string' if isinstance(value, str) else
-                    'object' if isinstance(value, dict) else
-                    'array' if isinstance(value, list) else 'number'
-                )
-                if actual not in allowed:
-                    raise LLMResponseError(
-                        f"game_narrator: operation {index} ({operation['type']}) "
-                        f"field {key} must have type {allowed}, got {actual}.",
-                        details=data)
-                if 'enum' in field_schema and value not in field_schema['enum']:
-                    raise LLMResponseError(f'game_narrator: invalid value for payload field {key}.', details=data)
-                constraint = contract['properties'][key]
-                if ('enum' in constraint and value not in constraint['enum']) or (
-                        constraint.get('type') == 'string' and not isinstance(value, str)):
-                    raise LLMResponseError(
-                        f"game_narrator: operation {index} ({operation['type']}) "
-                        f"has an invalid value for {key}.", details=data)
-                if key == 'aliases' and any(not isinstance(alias, str) for alias in value):
-                    raise LLMResponseError('game_narrator: aliases must contain strings.', details=data)
-        if not isinstance(data.get('action_succeeded'), bool) or not isinstance(data.get('game_over'), bool):
+        if not isinstance(data['action_succeeded'], bool) or not isinstance(data['game_over'], bool):
             raise LLMResponseError('game_narrator: action_succeeded and game_over must be booleans.', details=data)
+        notable = data['notable_elements']
+        if not isinstance(notable, dict) or set(notable) != {'items', 'locations', 'npcs'}:
+            raise LLMResponseError(
+                'game_narrator: notable_elements must contain only items, locations, and npcs.',
+                details=data)
+        for category, elements in notable.items():
+            if not isinstance(elements, list) or len(elements) > 20:
+                raise LLMResponseError(
+                    f'game_narrator: {category} must be a list of at most 20 entities.',
+                    details=data)
+            for index, element in enumerate(elements, 1):
+                if not isinstance(element, dict) or set(element) != {'name', 'description'}:
+                    raise LLMResponseError(
+                        f'game_narrator: {category} entry {index} must contain only name and description.',
+                        details=data)
+                if any(not isinstance(element[field], str) or not element[field].strip()
+                       or len(element[field].strip()) > 1000
+                       for field in ('name', 'description')):
+                    raise LLMResponseError(
+                        f'game_narrator: {category} entry {index} needs non-empty name and description.',
+                        details=data)
         return data
 
 
-class SummarizerCall(LLMCall):
-    name = 'game_summarizer'
+class ComparatorCall(LLMCall):
+    name = 'comparator'
 
     def format_user_input(self, user_input):
-        return f'Update the narrative summary from this history:\n{user_input}'
+        return f'Determine whether the proposed entity is already represented:\n{user_input}'
 
     def validate_response(self, data):
-        if not isinstance(data.get('summary'), str) or not data['summary'].strip():
-            raise LLMResponseError('game_summarizer: summary must be non-empty text.', details=data)
+        if set(data) != {'already_present'} or not isinstance(data['already_present'], bool):
+            raise LLMResponseError(
+                'comparator: response must contain only boolean already_present.', details=data)
         return data

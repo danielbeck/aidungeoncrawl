@@ -2,7 +2,7 @@
 
 ## Overview
 
-This backend provides an authenticated text-adventure API using Python Flask and SQLite. The engine stores authoritative world state and validates structured LLM proposals. It runs as a Flask server locally and as a CGI application on shared hosting.
+This backend provides an authenticated text-adventure API using Python Flask and SQLite. The engine stores authoritative world state and deterministically reconciles LLM-reported notable entities. It runs as a Flask server locally and as a CGI application on shared hosting.
 
 ## Directory Structure and File Explanations
 
@@ -14,13 +14,13 @@ This backend provides an authenticated text-adventure API using Python Flask and
 - **reset_email.py**: Sends password reset emails using authenticated TLS-protected SMTP.
 - **config_helper.py**: Utility for reading deployment configuration from config.json and determining backend paths.
 - **init_db.py**: Script to initialize account storage; gameplay tables are created when needed.
-- **game_engine.py**: Authoritative game-state model, proposal validation, and LLM turn orchestration.
+- **game_engine.py**: Authoritative game-state model, entity identity reconciliation, and LLM turn orchestration.
 - **logging_helper.py**: Helper for logging exceptions from CGI scripts to backend/logs/cgi_error.log.
 - **requirements.txt**: Python dependencies for the backend (Flask, Flask-CORS, etc).
 - **endpoints/**: Directory containing modularized Flask Blueprints for each API endpoint.
     - **game.py**: Authenticated endpoints for loading, starting, playing, and ending an adventure.
     - **auth.py**: Email registration/login, logout, current-user, and password recovery endpoints.
-- **llm_calls/gameplay.py** and **shared/llm/**: Structured calls and prompt/schema definitions for the inventory, map, NPC, narrator, and summarizer roles.
+- **llm_calls/gameplay.py** and **shared/llm/**: Structured calls and prompt/schema definitions for the inventory, map, NPC, narrator, and comparator roles.
 - **database/**: Contains the SQLite database file (app.db).
 - **logs/**: Stores log files for Flask and CGI error logging.
     - **flask_error.log**: Logs unhandled exceptions from Flask app.
@@ -121,7 +121,8 @@ curl -b cookies.txt -c cookies.txt -X POST http://localhost:8000/game/turn \
 
 `GET /game/` loads or creates the player's saved adventure. `POST /game/new`
 replaces it with a fresh adventure; `POST /game/stop` ends it. A turn uses
-structured inventory, map, and NPC assessments followed by narration. The server
+domain-scoped, structured inventory, map, and NPC interaction reports followed
+by narration. The server
 validates all proposed state changes and commits the turn atomically; `request_id`
 makes retries of a completed turn idempotent.
 
@@ -149,7 +150,7 @@ changing traversability requires `set_exit_traversable`.
 
 ### LLM diagnostics
 
-The game interface always shows a live turn-progress panel with manager assessments
+The game interface always shows a live turn-progress panel with manager reports
 as each finishes, narrator responses/correction errors, summarization, and saving
 status. Intermediate responses may reveal world details and are not committed
 state. Only the final saved response updates the story and inventory.

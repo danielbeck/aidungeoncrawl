@@ -1,11 +1,48 @@
 {
   "type": "object",
   "properties": {
-    "assessment": {
-      "type": "string",
-      "description": "Concise assessment of referenced items, availability, ambiguity, and plausible item consequences."
+    "items": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "interaction": {
+            "type": "string",
+            "enum": [
+              "mentioned",
+              "search",
+              "inspect",
+              "use",
+              "acquire",
+              "give",
+              "consume",
+              "drop",
+              "unclear"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "interaction"
+        ],
+        "additionalProperties": false
+      }
     }
   },
-  "required": ["assessment"],
+  "required": [
+    "items"
+  ],
   "additionalProperties": false
 }

@@ -9,7 +9,10 @@ from flask import Flask
 
 from backend import llm_provider
 from backend.endpoints.llm import bp as llm_bp
-from backend.llm_calls import REGISTRY, DescribeRoomCall, LLMCall, LLMResponseError, MessageHistory
+from backend.llm_calls import (
+    REGISTRY, InventoryManagerCall, LLMCall, LLMResponseError, MapManagerCall,
+    MessageHistory, NPCManagerCall,
+)
 
 TEST_DEFINITIONS_DIR = tempfile.mkdtemp()
 SCHEMA = {'type': 'object', 'properties': {'x': {'type': 'string'}}}
@@ -59,9 +62,6 @@ class FakeTransport:
         return {'provider': 'fake', 'model': 'fake-model', 'response': self.response}
 
 
-ROOM = {'title': 'Flooded Crypt', 'description': 'Water laps at your ankles.', 'exits': ['north']}
-
-
 class LLMCallTests(unittest.TestCase):
     def test_requires_name(self):
         with self.assertRaisesRegex(TypeError, 'name'):
@@ -103,12 +103,12 @@ class LLMCallTests(unittest.TestCase):
         self.assertIsNone(transport.calls[0]['schema'])
 
     def test_logs_start_and_raw_response_before_validation_failure(self):
-        call = DescribeRoomCall(transport=FakeTransport('not valid JSON'))
+        call = REGISTRY['comparator'](transport=FakeTransport('not valid JSON'))
         with self.assertLogs('backend.llm_calls.base', level='INFO') as logs:
             with self.assertRaises(LLMResponseError):
-                call.run('a crypt')
+                call.run('an identical item')
         self.assertIn('started', logs.output[0])
-        self.assertIn('describe_room', logs.output[0])
+        self.assertIn('comparator', logs.output[0])
         self.assertIn('response', logs.output[1])
         self.assertIn('not valid JSON', logs.output[1])
         self.assertIn('fake-model', logs.output[1])
@@ -168,36 +168,26 @@ class LLMCallTests(unittest.TestCase):
         self.assertEqual(QuietSchemaCall(transport=FakeTransport('')).build_system_prompt(), 'Do the thing.')
 
 
-class DescribeRoomCallTests(unittest.TestCase):
-    def test_sends_prompt_schema_and_formatted_input(self):
-        transport = FakeTransport(json.dumps(ROOM))
-        result = DescribeRoomCall(transport=transport).run(' a flooded crypt ')
-
-        self.assertEqual(result.data, ROOM)
-        request = transport.calls[0]
-        with open(os.path.join(os.path.dirname(__file__), '..', 'shared', 'llm', 'describe_room.json')) as f:
-            self.assertEqual(request['schema'], json.load(f))
-        self.assertEqual(request['schema_name'], 'describe_room')
-        self.assertEqual(request['messages'][0]['role'], 'system')
-        self.assertIn('"exits"', request['messages'][0]['content'])
-        self.assertEqual(request['messages'][-1], {'role': 'user', 'content': 'Room idea: a flooded crypt'})
-
-    def test_parses_fenced_json(self):
-        result = DescribeRoomCall(transport=FakeTransport(f'```json\n{json.dumps(ROOM)}\n```')).run('crypt')
-        self.assertEqual(result.data['title'], 'Flooded Crypt')
-
-    def test_rejects_non_json(self):
-        with self.assertRaises(LLMResponseError):
-            DescribeRoomCall(transport=FakeTransport('not json')).run('crypt')
-
-    def test_rejects_missing_required_fields(self):
-        with self.assertRaisesRegex(LLMResponseError, 'exits'):
-            DescribeRoomCall(transport=FakeTransport('{"title": "x", "description": "y"}')).run('crypt')
-
-    def test_rejects_invalid_exits(self):
-        bad = dict(ROOM, exits=['up'])
-        with self.assertRaises(LLMResponseError):
-            DescribeRoomCall(transport=FakeTransport(json.dumps(bad))).run('crypt')
+class GameplayManagerResponseTests(unittest.TestCase):
+    def test_manager_responses_only_allow_domain_entities_and_interactions(self):
+        entity = {'name': 'Mira', 'description': 'The tavern keeper.', 'interaction': 'speak'}
+        cases = (
+            (InventoryManagerCall, 'items', 'use'),
+            (MapManagerCall, 'locations', 'enter'),
+            (NPCManagerCall, 'npcs', 'speak'),
+        )
+        for call_class, field, interaction in cases:
+            with self.subTest(call=call_class.name):
+                call = call_class(transport=FakeTransport(''))
+                valid_entity = dict(entity, interaction=interaction)
+                self.assertEqual(call.validate_response({field: [valid_entity]}), {
+                    field: [valid_entity],
+                })
+                with self.assertRaises(LLMResponseError):
+                    call.validate_response({field: [valid_entity], 'assessment': 'out of scope'})
+                invalid_interaction = dict(valid_entity, interaction='discuss motivation')
+                with self.assertRaises(LLMResponseError):
+                    call.validate_response({field: [invalid_interaction]})
 
 
 class ProviderChatTests(unittest.TestCase):
@@ -244,19 +234,22 @@ class RunCallEndpointTests(unittest.TestCase):
         self.chat_patch = patch('backend.llm_calls.base.chat')
         self.chat = self.chat_patch.start()
         self.addCleanup(self.chat_patch.stop)
-        self.chat.return_value = {'provider': 'ollama', 'model': 'm', 'response': json.dumps(ROOM)}
+        result = {'already_present': True}
+        self.chat.return_value = {'provider': 'ollama', 'model': 'm', 'response': json.dumps(result)}
 
-    def post(self, body, name='describe_room'):
+    def post(self, body, name='comparator'):
         return self.client.post(f'/llm/calls/{name}', json=body)
 
     def test_runs_registered_call(self):
         response = self.post({'input': 'a flooded crypt'})
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json(), {'data': ROOM, 'provider': 'ollama', 'model': 'm'})
+        self.assertEqual(response.get_json(), {
+            'data': {'already_present': True}, 'provider': 'ollama', 'model': 'm',
+        })
         messages, schema, schema_name = self.chat.call_args[0]
-        self.assertEqual(messages[-1]['content'], 'Room idea: a flooded crypt')
-        self.assertEqual(schema_name, 'describe_room')
+        self.assertIn('a flooded crypt', messages[-1]['content'])
+        self.assertEqual(schema_name, 'comparator')
         self.assertEqual(self.chat.call_args[1]['settings'], {'LLM_PROVIDER': 'ollama'})
 
     def test_passes_history(self):
@@ -280,7 +273,7 @@ class RunCallEndpointTests(unittest.TestCase):
         self.chat.return_value = {'provider': 'ollama', 'model': 'm', 'response': 'not json'}
         response = self.post({'input': 'crypt'})
         self.assertEqual(response.status_code, 502)
-        self.assertIn('describe_room', response.get_json()['error'])
+        self.assertIn('comparator', response.get_json()['error'])
 
     def test_provider_failure_is_502(self):
         self.chat.side_effect = llm_provider.LLMError('down', details='boom')

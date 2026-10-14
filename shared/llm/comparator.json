@@ -1,0 +1,13 @@
+{
+  "type": "object",
+  "properties": {
+    "already_present": {
+      "type": "boolean",
+      "description": "True only when the proposed entity is already represented in the supplied list."
+    }
+  },
+  "required": [
+    "already_present"
+  ],
+  "additionalProperties": false
+}

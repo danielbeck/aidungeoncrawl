@@ -10,10 +10,11 @@ One prompt and an optional JSON schema per LLM call, named after the call's `nam
 - `<name>.json`: response schema (optional; without it the call returns plain text)
 
 The backend (`backend/llm_calls`) reads these at runtime and serves each call at
-`POST /llm/calls/<name>`. The frontend imports schemas at build time:
+`POST /llm/calls/<name>`. A frontend feature that needs a schema can import it
+at build time:
 
 ```js
-import roomSchema from '@shared/llm/describe_room.json'
+import narratorSchema from '@shared/llm/game_narrator.json'
 ```
 
 Backend edits take effect on restart; schema changes need a frontend rebuild.
