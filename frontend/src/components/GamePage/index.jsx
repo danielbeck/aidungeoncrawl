@@ -73,8 +73,6 @@ function GamePage() {
   }
 
   const startNewGame = async () => {
-    if (game?.status === 'active'
-      && !window.confirm('Start a new adventure? Your current adventure will be replaced.')) return
     setSubmitting(true)
     setError('')
     try {

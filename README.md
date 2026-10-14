@@ -114,3 +114,9 @@ cp .env.example .env
 - The frontend is built locally and deployed to the correct subdirectory as configured.
 
 See `deploy.sh` for full details and customization options.
+# Development startup
+
+Run `./dev.sh` to start the backend and frontend. Before starting, it sends
+termination signals to existing TCP listeners on ports 8000 and 3000, so reserve
+those ports for this project's development servers. It refuses to start if a
+port remains occupied and stops its backend process when the script exits.
