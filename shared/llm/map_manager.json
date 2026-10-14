@@ -3,6 +3,7 @@
   "properties": {
     "locations": {
       "type": "array",
+      "description": "Player movement: empty for no movement, otherwise departure first (leave, copying current_location exactly) and destination second (enter). current_location is the starting room before the action, never the destination.",
       "maxItems": 20,
       "items": {
         "type": "object",
@@ -19,15 +20,10 @@
           },
           "interaction": {
             "type": "string",
+            "description": "leave means the player departs FROM this room; enter means the player arrives AT this room. The supplied current_location must be leave, not enter.",
             "enum": [
-              "mentioned",
-              "remain",
-              "approach",
               "enter",
-              "leave",
-              "travel",
-              "discover",
-              "unclear"
+              "leave"
             ]
           }
         },

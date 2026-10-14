@@ -172,7 +172,7 @@ class GameplayManagerResponseTests(unittest.TestCase):
     def test_manager_responses_only_allow_domain_entities_and_interactions(self):
         entity = {'name': 'Mira', 'description': 'The tavern keeper.', 'interaction': 'speak'}
         cases = (
-            (InventoryManagerCall, 'items', 'use'),
+            (InventoryManagerCall, 'items', 'take'),
             (MapManagerCall, 'locations', 'enter'),
             (NPCManagerCall, 'npcs', 'speak'),
         )
@@ -234,7 +234,7 @@ class RunCallEndpointTests(unittest.TestCase):
         self.chat_patch = patch('backend.llm_calls.base.chat')
         self.chat = self.chat_patch.start()
         self.addCleanup(self.chat_patch.stop)
-        result = {'already_present': True}
+        result = {'same_entity': True}
         self.chat.return_value = {'provider': 'ollama', 'model': 'm', 'response': json.dumps(result)}
 
     def post(self, body, name='comparator'):
@@ -245,7 +245,8 @@ class RunCallEndpointTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {
-            'data': {'already_present': True}, 'provider': 'ollama', 'model': 'm',
+            'data': {'same_entity': True},
+            'provider': 'ollama', 'model': 'm',
         })
         messages, schema, schema_name = self.chat.call_args[0]
         self.assertIn('a flooded crypt', messages[-1]['content'])

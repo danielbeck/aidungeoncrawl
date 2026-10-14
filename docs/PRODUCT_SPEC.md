@@ -46,6 +46,13 @@ The LLM may introduce new locations, objects, NPCs, and events when appropriate.
 
 The LLM may elaborate on established facts but should not contradict them without an explicit narrative event that explains the change.
 
+Managers interpret actions, and deterministic code resolves their results
+directly against stored state before narration. The current location identifies
+the departure even when a map manager reverses enter/leave labels. The narrator
+describes the resolved outcome; it does not echo or override state, and a turn
+does not depend on matching entity lists between LLMs. Original and effective
+manager results are retained in the turn response.
+
 For example, a previously established locked door should not become an open archway simply because the narrator generates a different description of the room.
 
 ## Responsibilities
@@ -72,9 +79,10 @@ An exit should generally continue pointing to the same location once established
 
 The same location may be described differently on different turns. Its narrative description is not the authoritative representation of its identity, exits, or persistent object state.
 
-The current turn contract only registers notable location identities. It does
-not create exits or move the player; those map effects require a future
-deterministic rule.
+The map manager identifies a transition with one `leave` interaction for the
+current room and one `enter` interaction for the destination. Deterministic
+code resolves both rooms, creates reciprocal traversable exits if they do not
+already exist, marks the destination visited, and updates the current location.
 
 ### Items and inventory
 
@@ -82,12 +90,14 @@ The inventory is an array of identified items currently carried by the player.
 
 Items are not predefined. They may be introduced by the narrative, discovered in locations, acquired from NPCs, created, consumed, lost, or otherwise changed as the story progresses.
 
-The inventory manager determines which items are relevant to the action. The
-current turn contract adds an unmatched notable item to the player's inventory;
-it does not transfer or consume an existing item.
+The inventory manager reports only `take` and `drop` interactions. Deterministic
+code resolves item identity through the Comparator. Taking moves a matched item
+available in the current location (or held by a present NPC) into inventory; an
+item newly established by the action may be created directly in inventory.
+Dropping requires a matched item currently carried by the player and moves it
+to the current location.
 
-The following interaction examples describe future gameplay effects beyond the
-current identity-only turn contract:
+Other item effects remain unsupported by the current deterministic rules:
 
 For example:
 
@@ -97,13 +107,12 @@ For example:
 * "Drink the potion" may consume a potion if one is present.
 * "Use the key I found earlier" may refer to an existing item by its established identity.
 
-The game should distinguish between an item that exists in the world, an item
-the player knows about, and an item the player possesses as future gameplay
-effects are introduced.
+The game distinguishes between an item that exists in the world, an item the
+player knows about, and an item the player possesses.
 
-LLMs do not propose state changes. Identity matching may create a new item
-record, while transfer, consumption, loss, and other changes are not supported
-by the current turn contract.
+The manager classifies the intended interaction; deterministic code applies
+only supported `take` and `drop` transitions. Transfer to NPCs, consumption,
+loss, and other changes are not supported.
 
 An item should retain its identity across turns even if the narrator uses different words to describe it. For example, "iron key", "the key", and "the key I found in the hallway" may all refer to the same item.
 

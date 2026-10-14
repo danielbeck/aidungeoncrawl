@@ -1,13 +1,11 @@
 {
   "type": "object",
   "properties": {
-    "already_present": {
+    "same_entity": {
       "type": "boolean",
-      "description": "True only when the proposed entity is already represented in the supplied list."
+      "description": "Whether proposed_entity and candidate_entity refer to the same actual entity, not merely related entities. A tavern is not the square outside it."
     }
   },
-  "required": [
-    "already_present"
-  ],
+  "required": ["same_entity"],
   "additionalProperties": false
 }

@@ -60,7 +60,10 @@ function GamePage() {
         action: action.trim(),
         game_id: game.id,
         request_id: requestId.current,
-      }, event => setProgress(events => [...events, event]))
+      }, event => {
+        if (event.component === 'comparator' && event.llm === false) return
+        setProgress(events => [...events, event])
+      })
       setGame(data.game)
       setAction('')
       requestId.current = null
@@ -134,10 +137,22 @@ function GamePage() {
                 <li key={index}>
                   <strong>{({
                     inventory: 'Inventory manager', map: 'Map manager', npcs: 'NPC manager',
-                    narrator: 'Dungeon Master', turn: 'Turn',
+                    narrator: 'Dungeon Master', comparator: 'Comparator', turn: 'Turn',
                   })[event.component] || event.component}</strong>
                   {' — '}{event.status}{event.attempt ? ` (attempt ${event.attempt})` : ''}
                   {event.provider && <small>{' '}{event.provider}/{event.model}</small>}
+                  {event.reason && <p>{event.reason}</p>}
+                  {event.request && <details open={event.component === 'comparator'}>
+                    <summary>Request debug details</summary>
+                    <pre>{JSON.stringify(event.request, null, 2)}</pre>
+                  </details>}
+                  {event.proposed_entity && <pre>{JSON.stringify({
+                    entity_type: event.entity_type,
+                    proposed_entity: event.proposed_entity,
+                  }, null, 2)}</pre>}
+                  {event.matched_entity && <pre>{JSON.stringify({
+                    matched_entity: event.matched_entity,
+                  }, null, 2)}</pre>}
                   {event.response && <pre>{event.response.narration
                     || JSON.stringify(event.response, null, 2)}</pre>}
                   {event.component === 'narrator' && event.response && <details>
@@ -146,6 +161,7 @@ function GamePage() {
                       action_succeeded: event.response.action_succeeded,
                       game_over: event.response.game_over,
                       notable_elements: event.response.notable_elements,
+                      movement_outcome: event.response.movement_outcome,
                     }, null, 2)}</pre>
                   </details>}
                   {event.error && <p className={styles.error}>{event.error}</p>}

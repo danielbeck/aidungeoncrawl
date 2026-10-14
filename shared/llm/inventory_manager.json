@@ -3,7 +3,6 @@
   "properties": {
     "items": {
       "type": "array",
-      "maxItems": 20,
       "items": {
         "type": "object",
         "properties": {
@@ -20,15 +19,8 @@
           "interaction": {
             "type": "string",
             "enum": [
-              "mentioned",
-              "search",
-              "inspect",
-              "use",
-              "acquire",
-              "give",
-              "consume",
-              "drop",
-              "unclear"
+              "take",
+              "drop"
             ]
           }
         },

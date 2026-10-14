@@ -3,75 +3,18 @@
   "properties": {
     "narration": {
       "type": "string",
-      "description": "Player-facing response to the action."
+      "description": "Player-facing narration consistent with the engine's resolved interactions and resulting context.",
+      "minLength": 1
     },
     "action_succeeded": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "Whether the player's overall intent succeeded. Does not change or undo engine-resolved interactions."
     },
     "game_over": {
       "type": "boolean",
       "description": "Whether the character died and the game ended."
-    },
-    "notable_elements": {
-      "type": "object",
-      "properties": {
-        "items": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/entity"
-          },
-          "maxItems": 20
-        },
-        "locations": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/entity"
-          },
-          "maxItems": 20
-        },
-        "npcs": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/entity"
-          },
-          "maxItems": 20
-        }
-      },
-      "required": [
-        "items",
-        "locations",
-        "npcs"
-      ],
-      "additionalProperties": false
     }
   },
-  "$defs": {
-    "entity": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 1000
-        },
-        "description": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 1000
-        }
-      },
-      "required": [
-        "name",
-        "description"
-      ],
-      "additionalProperties": false
-    }
-  },
-  "required": [
-    "narration",
-    "action_succeeded",
-    "game_over",
-    "notable_elements"
-  ],
+  "required": ["narration", "action_succeeded", "game_over"],
   "additionalProperties": false
 }
