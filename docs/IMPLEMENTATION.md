@@ -141,6 +141,28 @@ retained interpretations, never narrator-generated entity lists.
 
 ## Turn sequence
 
+```mermaid
+sequenceDiagram
+    Conventional Code->>Inventory Manager: Relevant state, summary, and player action
+    Conventional Code->>NPC Manager: Relevant state, summary, and player action
+    Conventional Code->>Movement Intent Manager: Player action
+
+    Inventory Manager-->>Conventional Code: Inventory interactions
+    NPC Manager-->>Conventional Code: NPC interactions
+    Movement Intent Manager-->>Conventional Code: Movement intent
+
+    Conventional Code->>Movement Resolver: Intent and relevant context, when needed
+    Movement Resolver-->>Conventional Code: Destination or clarification
+
+    Conventional Code->>Comparator: Proposed entities and existing candidates, as needed
+    Comparator-->>Conventional Code: Same entity or different entity
+    Conventional Code->>Conventional Code: Reconcile and apply supported changes
+
+    Conventional Code->>Narrator: Player action, summary, before/after state, and resolved outcomes
+    Narrator-->>Conventional Code: Narration, success, and game-over flags
+    Conventional Code->>Conventional Code: Save state and history
+```
+
 1. Validate action, authentication, game ID, request ID, and active status.
 2. Obtain a current historical summary, regenerating it if missing/stale.
 3. Run inventory, movement-intent, and NPC calls in parallel with scoped inputs.
