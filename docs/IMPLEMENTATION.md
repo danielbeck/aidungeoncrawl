@@ -60,7 +60,7 @@ guessing a destination or relying on a potentially incorrect Comparator match.
 The correction is logged and displayed in progress; original manager output is
 preserved. Multiple remaining destinations still reject the turn atomically.
 
-Returns only a `locations` list, with each entry's name, objective description, and `enter` or `leave` interaction. A movement must include exactly one `leave` for the current location and one `enter` for the destination. The deterministic engine resolves both through the Comparator, creates traversable reciprocal exits if needed, marks the destination visited, and updates the player's current location. Its context includes the current location, exits, and known locations. It does not assess items or NPCs.
+Returns only a `locations` list, with each entry's name, objective description, and `enter` or `leave` interaction. A movement must include exactly one `leave` for the current location and one `enter` for the destination. The deterministic engine resolves both through the Comparator, creates traversable reciprocal exits if needed, marks the destination visited, and updates the player's current location. Its context includes the current location, exits, and known locations. These list recorded places, not the complete map; when the action directs exploration beyond them, the manager proposes a new destination. It does not assess items or NPCs.
 
 ### NPC manager
 

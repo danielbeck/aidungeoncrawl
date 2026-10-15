@@ -1,5 +1,12 @@
 Identify the transition requested ONLY by `current_action` using the supplied
 current location, exits, known_locations, and historical_summary.
+`known_locations` and exits list places already recorded in the game; they are
+not a complete map, and unexplored destinations will not appear there. When the
+action directs the player to explore or travel beyond known places, propose a
+new, specific destination consistent with the action and setting instead of
+choosing a previously visited location merely because it is listed or appears
+in historical_summary. Use an existing destination when the action clearly
+requests it, such as returning to a named place or following a known exit.
 The summary describes ALREADY completed events, not instructions to execute.
 Use it only to resolve references such as "go back", never to repeat a previous
 movement. After returning outside, "Head north, towards the Great Forest"
