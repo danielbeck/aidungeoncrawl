@@ -1,0 +1,29 @@
+{
+  "type": "object",
+  "properties": {
+    "destination": {
+      "description": "The actual destination satisfying the intent, or null when a reference is unresolved or a route is blocked. Never invent a referent for him/there. Missing exits alone do not block discovery of a new place.",
+      "anyOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "properties": {
+            "name": {"type": "string", "minLength": 1, "maxLength": 1000},
+            "description": {"type": "string", "minLength": 1, "maxLength": 1000}
+          },
+          "required": ["name", "description"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "clarification": {
+      "anyOf": [
+        {"type": "null"},
+        {"type": "string", "minLength": 1, "maxLength": 1000}
+      ],
+      "description": "Required when destination is null; otherwise null."
+    }
+  },
+  "required": ["destination", "clarification"],
+  "additionalProperties": false
+}

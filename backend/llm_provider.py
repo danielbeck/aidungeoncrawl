@@ -68,6 +68,8 @@ def call_ollama(messages, schema, config):
         'messages': messages,
         'stream': False,
     }
+    if config.get('temperature') is not None:
+        payload['options'] = {'temperature': config['temperature']}
     if schema is not None:
         payload['format'] = schema
 
@@ -90,6 +92,8 @@ def call_openrouter(messages, schema, schema_name, config):
         'model': config['openrouter_model'],
         'messages': messages,
     }
+    if config.get('temperature') is not None:
+        payload['temperature'] = config['temperature']
     if schema is not None:
         payload['response_format'] = {
             'type': 'json_schema',
@@ -119,11 +123,13 @@ def call_openrouter(messages, schema, schema_name, config):
     }
 
 
-def chat(messages, schema=None, schema_name=None, settings=None, config=None):
+def chat(messages, schema=None, schema_name=None, settings=None, config=None, temperature=None):
     """Send a list of chat `messages` ({role, content}) to the configured
     provider. `schema` is an optional JSON schema used as the structured
     response_format. Returns {provider, model, response}."""
     config = config or get_llm_config(settings or {})
+    if temperature is not None:
+        config = {**config, 'temperature': temperature}
     if config['provider'] == 'openrouter':
         return call_openrouter(messages, schema, schema_name, config)
     return call_ollama(messages, schema, config)

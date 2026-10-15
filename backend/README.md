@@ -20,7 +20,7 @@ This backend provides an authenticated text-adventure API using Python Flask and
 - **endpoints/**: Directory containing modularized Flask Blueprints for each API endpoint.
     - **game.py**: Authenticated endpoints for loading, starting, playing, and ending an adventure.
     - **auth.py**: Email registration/login, logout, current-user, and password recovery endpoints.
-- **llm_calls/gameplay.py** and **shared/llm/**: Structured calls and prompt/schema definitions for the inventory, map, NPC, narrator, and comparator roles.
+- **llm_calls/gameplay.py** and **shared/llm/**: Structured calls and prompt/schema definitions for the inventory, movement intent, movement resolution, NPC, narrator, and comparator roles.
 - **database/**: Contains the SQLite database file (app.db).
 - **logs/**: Stores log files for Flask and CGI error logging.
     - **flask_error.log**: Logs unhandled exceptions from Flask app.
@@ -121,8 +121,11 @@ curl -b cookies.txt -c cookies.txt -X POST http://localhost:8000/game/turn \
 
 `GET /game/` loads or creates the player's saved adventure. `POST /game/new`
 replaces it with a fresh adventure; `POST /game/stop` ends it. A turn uses
-domain-scoped, structured inventory, map, and NPC interaction reports followed
-by narration. The server
+domain-scoped inventory and NPC reports plus movement intent extracted without
+map candidates or history. Named destinations go directly to identity matching;
+context-dependent movement uses a separate resolver, and "go back" uses recorded
+movement IDs. Unresolved movement asks for clarification without moving the player.
+The server
 validates all proposed state changes and commits the turn atomically; `request_id`
 makes retries of a completed turn idempotent.
 

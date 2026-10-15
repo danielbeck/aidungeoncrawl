@@ -15,6 +15,8 @@ The game engine maintains the authoritative logical state:
 * **Game state:** Current location, player status, and whether the game is active or ended.
 * **World state:** Locations, exits, items, objects, and NPCs, with stable IDs and the state needed by the game.
 * **History:** The complete literal ordered record of player actions and narrator responses in `history.recentEvents` (despite its legacy name, this holds all exchanges). A separate derived `history.summary` provides LLM context; it never replaces or compacts the stored literal record. `history.summaryEventCount` records how many entries the summary covers.
+  `history.lastMovement` records the last actual departure and arrival IDs for
+  resolving "go back"; stationary turns do not change it.
 
 Existing object records remain available to the game UI, but the identity-only
 turn contract does not create or change objects.
@@ -25,7 +27,7 @@ Every persistent entity has a stable ID assigned and managed by deterministic co
 
 Code resolves unique exact identities first; otherwise the Comparator decides whether a proposal and one candidate refer to the same entity. It returns only boolean `same_entity`. Code retains the candidate's canonical record and ID, so the LLM never generates an index or ID. A single positive match resolves the entity, no matches permit creation only when allowed, and multiple matches reject the turn as ambiguous. Canonical entities are returned in `reconciled_entities`.
 
-Map and inventory interactions from their managers are applied deterministically on a candidate state before narration. A paired `leave`/`enter` moves the player, creates or resolves the destination through the Comparator, marks it visited, and ensures traversable exits connect the two locations in both directions. The departure must match the stored current location. Mismatched departures are ignored with a warning and a map progress event, and passed to the narrator as ignored interactions; labels are never automatically reversed. This prevents a replayed previous transition from moving the player back. `take` resolves or creates the item and places it in the player's inventory; `drop` must resolve an existing carried item and places it in the current location. Inventory is processed before movement so drops land in the room being left. NPC entries are reconciled at the resulting location but do not change an existing NPC's location or status. Transfers to NPCs and consumption remain unsupported.
+Movement and inventory are applied deterministically on a candidate state before narration. The engine supplies the departure from stored state, resolves or creates the destination through the Comparator, marks it visited, and ensures traversable exits connect the two locations in both directions. It constructs the resulting `leave`/`enter` interactions itself; models no longer label the departure. `take` resolves or creates the item and places it in the player's inventory; `drop` must resolve an existing carried item and places it in the current location. Inventory is processed before movement so drops land in the room being left. NPC entries are reconciled at the resulting location but do not change an existing NPC's location or status. Transfers to NPCs and consumption remain unsupported.
 
 ## LLM components
 
@@ -46,21 +48,50 @@ Returns only an `items` list. Each entry has a natural-language name and objecti
 
 ### Map manager
 
-For movement, destination comparisons exclude the confirmed departure room.
-A destination whose normalized name equals the current room is a no-op, not a
-duplicate location. The engine calculates `movement_outcome` from actual
-before/after location IDs (`moved`, `from_location`, `to_location`) and supplies
-it to the Narrator and turn response/debug output. Narration must respect that
-outcome instead of inferring successful movement from manager labels.
+Movement interpretation and destination resolution are separate stages:
 
-When multiple `enter` entries are returned, code removes those whose name and
-description both match the stored current room (ignoring case, punctuation,
-spacing, and Unicode presentation differences). This narrowly repairs a redundant starting-room entry without
-guessing a destination or relying on a potentially incorrect Comparator match.
-The correction is logged and displayed in progress; original manager output is
-preserved. Multiple remaining destinations still reject the turn atomically.
+1. `map_manager` receives **only** `current_action`, in
+   parallel with the inventory and NPC managers. It never sees candidate rooms,
+   the current room, exits, historical summaries, or previous exchanges. Live
+   testing showed that even the current-room description biased reference
+   interpretation, so all world context is withheld until resolution. It returns
+   `{"movement":false,"target":null}` or a movement target containing `kind`
+   (`named`, `back`, `relative`, `directional`, `exploratory`, `reference`) and
+   `text`, preserving the requested destination phrase.
+2. Named targets go directly to existing entity matching, using a neutral
+   description rather than invented scenery. A failed identity match creates
+   the requested place instead of selecting a familiar alternative. `back`
+   targets use `history.lastMovement` directly. Older saves without structured
+   movement history ask which place to return to until a movement is recorded.
+   Relative, directional, exploratory, and reference targets use
+   `movement_resolver`, which receives the intent, current location, available
+   and blocked exits, known locations, and last actual movement. Only relative
+   and reference resolution also receives the last three completed exchanges
+   and NPCs here. Missing destinations are normal for unexplored routes; the
+   resolver can propose a new place. It returns a destination or a player-facing
+   clarification, never a substitute destination for an ambiguous reference.
 
-Returns only a `locations` list, with each entry's name, objective description, and `enter` or `leave` interaction. A movement must include exactly one `leave` for the current location and one `enter` for the destination. The deterministic engine resolves both through the Comparator, creates traversable reciprocal exits if needed, marks the destination visited, and updates the player's current location. Its context includes the current location, exits, and known locations. These list recorded places, not the complete map; when the action directs exploration beyond them, the manager proposes a new destination. It does not assess items or NPCs.
+The engine logs and exposes intent and resolution separately in progress.
+Movement interpretation and contextual resolution use temperature zero to reduce
+sampling variation; narration keeps the provider's normal sampling behavior.
+`turn.manager_results.map` retains the raw intent; `effective_manager_results.map`
+and `notable_elements.locations` contain the engine-generated interactions.
+`movement_resolution` exposes the destination or clarification to the Narrator,
+turn response, and debug output. Unresolved movement leaves the map unchanged
+and is reported in `ignored_interactions`; the Narrator asks the clarification
+or explains the blockage. There is no regex-based movement interpretation or
+redundant-room correction.
+
+Destination comparisons exclude the departure room. A destination whose
+normalized name equals the current room is a no-op, not a duplicate location.
+The engine calculates `movement_outcome` from actual before/after location IDs
+(`moved`, `from_location`, `to_location`); narration must respect it.
+
+Focused live-model checks are opt-in and use local Ollama only:
+
+```bash
+RUN_LIVE_MOVEMENT_TESTS=1 venv/bin/python -m unittest backend.test_movement_live
+```
 
 ### NPC manager
 
@@ -125,7 +156,7 @@ The deterministic turn processor coordinates each gameplay turn:
 3. In parallel, send each manager the action and the context relevant to its responsibility.
 4. Copy the saved state and manager interpretations into a candidate turn.
 5. Apply inventory interactions through Comparator matches. Drops land in the starting room.
-6. Resolve map interactions against the stored current location, ignore mismatched departures without reversing labels, and apply valid movement and reciprocal exits.
+6. Resolve movement intent (named identity, structured return, or contextual resolution), then apply valid movement and reciprocal exits from the authoritative current location.
 7. Reconcile NPC entries at the resulting location through the Comparator.
 8. Give the Narrator starting and resulting context plus resolved interactions. Validate its narration and boolean outcome flags; do not ask it to echo state.
 9. Append the player action and narration to the complete literal history.
@@ -138,7 +169,7 @@ If any required LLM call fails or returns invalid output, return an error and le
 
 Construct a minimal, purpose-specific context for each LLM call. The shared gameplay context contains the player's intended action, current location, carried items, known available items, items and known objects at the current location, NPCs at the current location, known locations and exits, and recent exchanges. Include only the natural-language names and descriptions needed for interpretation.
 
-Managers receive `current_action`, domain-specific state, and `historical_summary`, not literal exchanges. Prompts classify only the current action and use the overview only for continuity and reference resolution. Inventory receives carried and local items/objects; Map receives locations and exits; NPC receives only NPCs at the current location. The Narrator receives the action and historical summary once each, outside the history-free starting and resulting state contexts, plus engine-resolved interactions. Original reports are returned in `turn.manager_results`; `turn.effective_manager_results` and `turn.notable_elements` retain applied interpretations. The Comparator receives an entity type, one candidate, and the proposed entity, using names and descriptions only.
+Inventory and NPC managers receive `current_action`, domain-specific state, and `historical_summary`, not literal exchanges. Inventory receives carried and local items/objects; NPC receives NPCs at the current location. Movement intent receives only the current action; contextual resolution receives the extracted intent and relevant world state, with recent literal exchanges only for relative/referential targets. The Narrator receives the action and historical summary once each, outside the history-free starting and resulting state contexts, plus engine-resolved interactions. Original reports are returned in `turn.manager_results`; `turn.effective_manager_results` and `turn.notable_elements` retain applied interpretations. The Comparator receives an entity type, one candidate, and the proposed entity, using names and descriptions only.
 
 LLMs are not responsible for ID generation, database tracking, or maintaining map topology.
 
@@ -188,9 +219,9 @@ deterministically verified semantic property.
 
 ## Communication protocol and validation
 
-LLM requests and responses use defined schemas. Validate required fields and value types before processing a response. The Narrator returns only narration and boolean `action_succeeded` and `game_over` values. Managers return their domain-specific interaction lists. Invalid schemas, ambiguous transitions, or invalid Comparator matches still fail safely without changing saved state.
+LLM requests and responses use defined schemas. Validate required fields and value types before processing a response. The Narrator returns only narration and boolean `action_succeeded` and `game_over` values. Inventory and NPC managers return interaction lists; Map returns movement intent, and the contextual resolver returns a destination or clarification. Invalid schemas or ambiguous Comparator matches fail safely without changing saved state.
 
-Deterministic code resolves manager interactions and owns all IDs and persistent writes. One positive `same_entity` comparison selects the candidate record retained by code; no matches permit creation where allowed. `take` may create an item established by the action; `drop` requires a matched carried item. Movement requires a matched current location and one entered destination. Canonical identities are returned in `turn.reconciled_entities`.
+Deterministic code resolves manager interactions and owns all IDs and persistent writes. One positive `same_entity` comparison selects the candidate record retained by code; no matches permit creation where allowed. `take` may create an item established by the action; `drop` requires a matched carried item. Movement uses the authoritative current location and one resolved destination. Canonical identities are returned in `turn.reconciled_entities`.
 
 ## Error handling and observability
 

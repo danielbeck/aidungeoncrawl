@@ -13,6 +13,7 @@ try:
         ComparatorCall,
         InventoryManagerCall,
         MapManagerCall,
+        MovementResolverCall,
         NPCManagerCall,
         NarratorCall,
         HistorySummarizerCall,
@@ -23,6 +24,7 @@ except ImportError:
         ComparatorCall,
         InventoryManagerCall,
         MapManagerCall,
+        MovementResolverCall,
         NPCManagerCall,
         NarratorCall,
         HistorySummarizerCall,
@@ -286,84 +288,107 @@ def _add_exit(origin, destination):
     })
 
 
-def _apply_map_interactions(state, manager_result, comparator, on_progress=None):
-    if not isinstance(manager_result, dict) or set(manager_result) != {'locations'}:
-        raise InvalidTurnResponse('Map manager must return only a locations list.')
-    locations = manager_result['locations']
-    if not isinstance(locations, list):
-        raise InvalidTurnResponse('Map manager locations must be a list.')
-    for entry in locations:
-        if (not isinstance(entry, dict)
-                or set(entry) != {'name', 'description', 'interaction'}
-                or not isinstance(entry.get('name'), str) or not entry['name'].strip()
-                or not isinstance(entry.get('description'), str) or not entry['description'].strip()
-                or entry.get('interaction') not in ('enter', 'leave')):
-            raise InvalidTurnResponse('Map manager returned an invalid location interaction.')
-
-    entering = [entry for entry in locations if entry['interaction'] == 'enter']
-    leaving = [entry for entry in locations if entry['interaction'] == 'leave']
-    if not entering and not leaving:
-        return []
+def _resolve_movement(state, intent, context, calls, progress):
+    MapManagerCall.validate_response(intent)
+    if not intent['movement']:
+        return [], [], None
 
     current_id = state['currentLocationId']
-    current = next(location for location in state['world']['locations']
-                   if location['id'] == current_id)
-    if len(entering) > 1:
-        redundant = [
-            entry for entry in entering
-            if all(_normalized_text(entry[field]) == _normalized_text(current[field])
-                   for field in ('name', 'description'))
-        ]
-        if redundant:
-            locations = [entry for entry in locations
-                         if not (entry['interaction'] == 'enter' and entry in redundant)]
-            manager_result['locations'] = locations
-            entering = [entry for entry in locations if entry['interaction'] == 'enter']
-            reason = 'Removed redundant enter entries for the current location.'
-            logger.warning('%s Game %s.', reason, state['id'])
-            if on_progress is not None:
-                on_progress('map', 'corrected', reason=reason, response=manager_result)
-    if len(entering) != 1 or len(leaving) != 1:
-        raise InvalidTurnResponse(
-            'Map movement requires exactly one entering and one leaving location.')
-
-    origin = _resolve_entity(
-        state, 'locations', leaving[0], comparator, current_id, create_if_missing=False,
-        on_progress=on_progress)
-    if origin is None or origin['id'] != current_id:
-        reason = 'Map departure does not match the current location; no movement was applied.'
-        logger.warning('%s Game %s.', reason, state['id'])
-        if on_progress is not None:
-            on_progress('map', 'ignored', response=copy.deepcopy(locations), reason=reason)
-        manager_result['locations'] = []
-        return []
-    if _normalized_text(entering[0]['name']) == _normalized_text(current['name']):
-        destination = current
+    locations = state['world']['locations']
+    current = next(location for location in locations if location['id'] == current_id)
+    by_id = {location['id']: location for location in locations}
+    last_movement = state['history'].get('lastMovement')
+    previous = (by_id.get(last_movement['fromLocationId'])
+                if last_movement and last_movement['toLocationId'] == current_id else None)
+    target = intent['target']
+    destination = None
+    if target['kind'] == 'named':
+        text = target['text'].strip()
+        resolution = {
+            'destination': {'name': text, 'description': f'A place known as {text}.'},
+            'clarification': None,
+        }
+        progress('movement_resolver', 'skipped', llm=False,
+                 reason='Named destination goes directly to identity matching.', response=resolution)
+    elif target['kind'] == 'back':
+        destination = previous
+        resolution = {
+            'destination': _display_entity(destination) if destination else None,
+            'clarification': None if previous else 'Which location would you like to return to?',
+        }
+        progress('movement_resolver', 'skipped', llm=False,
+                 reason='Return destination comes from the last actual movement.', response=resolution)
     else:
-        destination = _resolve_entity(
-            state, 'locations', entering[0], comparator, current_id, on_progress=on_progress,
-            candidates=[location for location in state['world']['locations']
-                        if location['id'] != origin['id']])
+        request = {
+            'movement_intent': intent,
+            'current_location': context['current_location'],
+            'available_exits': [
+                display for exit_, display in zip(current.get('exits', []), context['exits'])
+                if exit_.get('traversable', True)
+            ],
+            'blocked_exits': [
+                display for exit_, display in zip(current.get('exits', []), context['exits'])
+                if not exit_.get('traversable', True)
+            ],
+            'known_locations': [_display_entity(location) for location in locations
+                                if location['id'] != current_id],
+            'last_movement': {
+                'from_location': _display_entity(previous),
+                'to_location': context['current_location'],
+            } if previous else None,
+        }
+        if target['kind'] in ('relative', 'reference'):
+            request['recent_exchanges'] = state['history'].get('recentEvents', [])[-6:]
+            request['npcs_here'] = context['npcs_here']
+        progress('movement_resolver', 'started', request=request)
+        try:
+            result = _run_logged('movement_resolver', calls['movement_resolver'], request)
+            resolution = MovementResolverCall.validate_response(result.data)
+        except LLMError as error:
+            progress('movement_resolver', 'failed', error=str(error),
+                     response=getattr(error, 'details', None))
+            raise
+        progress('movement_resolver', 'completed', response=resolution,
+                 provider=result.provider, model=result.model)
+
+    proposed = resolution['destination']
+    if proposed is not None:
+        if destination is None:
+            if _normalized_text(proposed['name']) == _normalized_text(current['name']):
+                destination = current
+            else:
+                destination = _resolve_entity(
+                    state, 'locations', proposed, calls['comparator'], current_id, on_progress=progress,
+                    candidates=[location for location in locations if location['id'] != current_id])
+        if any(exit_.get('destinationId') == destination['id']
+               and not exit_.get('traversable', True) for exit_ in current.get('exits', [])):
+            resolution = {'destination': None, 'clarification': 'The requested route is blocked.'}
+        else:
+            resolution = {'destination': _display_entity(destination), 'clarification': None}
+
+    if resolution['destination'] is None:
+        reason = resolution['clarification']
+        logger.warning('Unresolved movement in game %s: %s', state['id'], reason)
+        progress('map', 'ignored', response=intent, reason=reason)
+        return [], [], resolution
+
     if destination['id'] == current_id:
-        return [{
-            'id': destination['id'],
-            'name': destination['name'],
-            'description': destination.get('description', ''),
-        }]
+        return [], [], resolution
 
     _add_exit(current, destination)
     _add_exit(destination, current)
     destination['visited'] = True
     state['currentLocationId'] = destination['id']
-    return [{
-        'id': origin['id'],
-        'name': origin['name'],
-        'description': origin.get('description', ''),
-    }, {
-        'id': destination['id'],
-        'name': destination['name'],
-        'description': destination.get('description', ''),
-    }]
+    state['history']['lastMovement'] = {
+        'fromLocationId': current_id, 'toLocationId': destination['id'],
+    }
+    resolved = [{'id': location['id'], **_display_entity(location)}
+                for location in (current, destination)]
+    interactions = [
+        {**_display_entity(current), 'interaction': 'leave'},
+        {**_display_entity(destination), 'interaction': 'enter'},
+    ]
+    return resolved, interactions, resolution
 
 
 def _explicit_inventory_intent(action):
@@ -489,6 +514,7 @@ def process_turn(state, action, calls=None, settings=None, on_progress=None):
     calls = calls or {
         'inventory': InventoryManagerCall(settings=settings),
         'map': MapManagerCall(settings=settings),
+        'movement_resolver': MovementResolverCall(settings=settings),
         'npcs': NPCManagerCall(settings=settings),
         'narrator': NarratorCall(settings=settings),
         'comparator': ComparatorCall(settings=settings),
@@ -543,10 +569,7 @@ def process_turn(state, action, calls=None, settings=None, on_progress=None):
             )},
         },
         'map': {
-            **manager_turn_context,
-            **{key: context[key] for key in (
-                'current_location', 'exits', 'known_locations',
-            )},
+            'current_action': action,
         },
         'npcs': {
             **manager_turn_context,
@@ -557,7 +580,7 @@ def process_turn(state, action, calls=None, settings=None, on_progress=None):
     }
     logger.info('Player action for game %s: %s', state['id'], action)
     for key in ('inventory', 'map', 'npcs'):
-        progress(key, 'started')
+        progress(key, 'started', request=manager_contexts[key])
     with ThreadPoolExecutor(max_workers=3) as executor:
         futures = {
             executor.submit(_run_logged, key, calls[key], manager_contexts[key]): key
@@ -567,6 +590,8 @@ def process_turn(state, action, calls=None, settings=None, on_progress=None):
         for future in as_completed(futures):
             key = futures[future]
             result = future.result()
+            if key == 'map':
+                MapManagerCall.validate_response(result.data)
             manager_results[key] = result.data
             progress(key, 'completed', response=result.data,
                      provider=result.provider, model=result.model)
@@ -579,8 +604,9 @@ def process_turn(state, action, calls=None, settings=None, on_progress=None):
         manager_items = _apply_inventory_interactions(
             candidate, effective_manager_results['inventory'], calls['comparator'],
             current_location_id, on_progress=progress, action=action)
-        manager_locations = _apply_map_interactions(
-            candidate, effective_manager_results['map'], calls['comparator'], on_progress=progress)
+        manager_locations, location_interactions, movement_resolution = _resolve_movement(
+            candidate, manager_results['map'], context, calls, progress)
+        effective_manager_results['map'] = {'locations': location_interactions}
         current_location_id = candidate['currentLocationId']
         manager_npcs = _reconcile_collection(
             candidate, 'npcs', effective_manager_results['npcs']['npcs'],
@@ -619,6 +645,7 @@ def process_turn(state, action, calls=None, settings=None, on_progress=None):
         'game_context': context,
         'resolved_context': resolved_context,
         'movement_outcome': movement_outcome,
+        'movement_resolution': movement_resolution,
         'resolved_interactions': notable,
         'ignored_interactions': ignored_interactions,
     }
@@ -631,7 +658,8 @@ def process_turn(state, action, calls=None, settings=None, on_progress=None):
                  response=getattr(error, 'details', None))
         raise
     progress('narrator', 'completed', response={
-        **response, 'notable_elements': notable, 'movement_outcome': movement_outcome},
+        **response, 'notable_elements': notable, 'movement_outcome': movement_outcome,
+        'movement_resolution': movement_resolution},
              provider=narrator_result.provider, model=narrator_result.model)
 
     if response['game_over']:
@@ -657,6 +685,7 @@ def process_turn(state, action, calls=None, settings=None, on_progress=None):
         'manager_results': manager_results,
         'effective_manager_results': effective_manager_results,
         'movement_outcome': movement_outcome,
+        'movement_resolution': movement_resolution,
         'ignored_interactions': ignored_interactions,
         'provider': narrator_result.provider,
         'model': narrator_result.model,

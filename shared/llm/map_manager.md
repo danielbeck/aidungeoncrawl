@@ -1,54 +1,59 @@
-Identify the transition requested ONLY by `current_action` using the supplied
-current location, exits, known_locations, and historical_summary.
-`known_locations` and exits list places already recorded in the game; they are
-not a complete map, and unexplored destinations will not appear there. When the
-action directs the player to explore or travel beyond known places, propose a
-new, specific destination consistent with the action and setting instead of
-choosing a previously visited location merely because it is listed or appears
-in historical_summary. Use an existing destination when the action clearly
-requests it, such as returning to a named place or following a known exit.
-The summary describes ALREADY completed events, not instructions to execute.
-Use it only to resolve references such as "go back", never to repeat a previous
-movement. After returning outside, "Head north, towards the Great Forest"
-means leave the current outdoor location and enter the forest, not leave the
-tavern again.
-Return exactly one `leave` entry
-for the current location and one `enter` entry for the destination when the
-player moves. Always include both sides of a transition. Use `leave` for the
-location the player departs and `enter` for the location they arrive at. Do
-not report locations that are merely mentioned.
+Extract movement intent from `current_action`. Return JSON only.
+You receive only the action. World state is deliberately withheld to avoid
+substituting a familiar place for the requested destination.
 
-`current_location` is the authoritative starting location BEFORE this action.
-Do not infer the starting location from historical_summary or from where the action
-will end. Interaction labels describe what the PLAYER does to each location,
-not what a doorway does or which side of it the player sees:
-- `leave`: the player departs FROM this location. Copy the supplied
-  `current_location` name and description exactly.
-- `enter`: the player arrives AT this location after departing the current one.
-  This is the destination requested by the action, not the starting location.
+Movement means the player asks to change location. It does NOT require a known
+destination. "Go there" and "follow him" ARE movement even though their targets
+need clarification later. Do not resolve references yourself.
 
-For "enter the tavern" while current_location is the town square, the square
-is `leave` and the tavern is `enter`. For "leave the tavern for the square"
-while current_location is the tavern, the tavern is `leave` and the square is
-`enter`. Never reverse these labels. Return the departure entry first and
-the arrival entry second.
+Extract the complete destination phrase, NOT a movement verb or preposition.
+A place explicitly specified by name OR type is `named`: tavern, wilderness,
+forest, North Gate. "Into" by itself is never a destination.
+An explicit place ALWAYS takes priority over a compass direction in the same
+action: for "Head north towards the Great Forest", extract "the Great Forest"
+as named, NOT "north" as directional. Do not discard the destination after
+"towards", "toward", "to", or "into".
 
-Movement must contain exactly TWO entries total, never three or more.
-Do not include the starting room again as `enter`: the player is already there.
-For square-to-tavern movement, return only square/leave and tavern/enter,
-NOT square/leave, square/enter, tavern/enter. Do not list intermediate rooms
-or duplicate the departure or destination.
+Kinds:
+- named: explicitly specified place or type of place.
+- back: retracing the last journey, without an explicit destination.
+- relative: outside, inside, upstairs, downstairs.
+- directional: compass direction or a route/doorway, without a specified place.
+- exploratory: open-ended exploration, rather than travel to a specified place.
+- reference: a pronoun or unresolved reference to a place or person.
 
-Return a JSON object with only a `locations` array. Each entry must contain exactly
-`name`, `description`, and `interaction`. Populate it only with the departure and
-destination for movement requested by `current_action`; do not invent locations
-to fill the output format. When no movement is requested, return {"locations":[]}.
+Examples (action -> complete response):
+"Head into the wilderness."
+-> {"movement":true,"target":{"text":"the wilderness","kind":"named"}}
+"Make my way to the tavern."
+-> {"movement":true,"target":{"text":"the tavern","kind":"named"}}
+"Head north towards the Great Forest."
+-> {"movement":true,"target":{"text":"the Great Forest","kind":"named"}}
+"Enter North Gate."
+-> {"movement":true,"target":{"text":"North Gate","kind":"named"}}
+"Return to the square."
+-> {"movement":true,"target":{"text":"the square","kind":"named"}}
+"Retrace my steps."
+-> {"movement":true,"target":{"text":"Retrace my steps","kind":"back"}}
+"Go outside."
+-> {"movement":true,"target":{"text":"outside","kind":"relative"}}
+"Head north."
+-> {"movement":true,"target":{"text":"north","kind":"directional"}}
+"Explore farther into the woods."
+-> {"movement":true,"target":{"text":"farther into the woods","kind":"exploratory"}}
+"Go there."
+-> {"movement":true,"target":{"text":"there","kind":"reference"}}
+"Follow him."
+-> {"movement":true,"target":{"text":"him","kind":"reference"}}
+"Look at the tavern."
+-> {"movement":false,"target":null}
+"Do not enter the tavern."
+-> {"movement":false,"target":null}
+"Drop the key."
+-> {"movement":false,"target":null}
 
-Each location must have a natural-language name, objective description, and
-interaction exactly `enter` or `leave`. If the player does not move, return an
-empty list. Do not create exits or decide persistent map state. Never include
-IDs, exit state, NPC or item details, prose assessments, or extra fields.
-
-A common error is to reverse the `leave` and `enter` actions. Confirm that you do not have the player entering their current location.
-
-Before responding, verify that `current_action` requests movement. If it does not, return {"locations":[]}, even if `historical_summary` describes movement. Otherwise, `leave` must match `current_location`, and `enter` must identify a different destination requested by `current_action`.
+For other wording, apply these meanings, not literal phrase matching.
+Respect negation and conditions; do not execute hypothetical journeys.
+For compound actions, extract the requested movement, not incidental places.
+Preserve destination wording and qualifiers. Never choose a different place,
+invent a destination, produce leave/enter entries, or output IDs or narration.

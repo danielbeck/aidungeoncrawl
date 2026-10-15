@@ -7,7 +7,6 @@ except ImportError:
 
 MANAGER_INTERACTIONS = {
     'inventory': ('items', ('take', 'drop')),
-    'map': ('locations', ('enter', 'leave')),
     'npcs': ('npcs', ('mentioned', 'speak', 'ask', 'offer', 'receive', 'follow', 'help',
                       'threaten', 'attack', 'encounter', 'unclear')),
 }
@@ -54,14 +53,53 @@ class InventoryManagerCall(LLMCall):
 
 class MapManagerCall(LLMCall):
     name = 'map_manager'
+    temperature = 0
 
     def format_user_input(self, user_input):
-        return f'Classify only location and movement interactions in this game context:\n{user_input}'
+        return f'Extract movement intent from this action, without choosing a map location:\n{user_input}'
 
-    def validate_response(self, data):
-        return _validate_entity_interactions(
-            data, *MANAGER_INTERACTIONS['map'], self.name,
-        )
+    @staticmethod
+    def validate_response(data):
+        if (not isinstance(data, dict) or set(data) != {'movement', 'target'}
+                or not isinstance(data['movement'], bool)):
+            raise LLMResponseError('map_manager: expected movement boolean and target.', details=data)
+        target = data['target']
+        if not data['movement']:
+            if target is not None:
+                raise LLMResponseError('map_manager: no movement requires a null target.', details=data)
+        elif (not isinstance(target, dict) or set(target) != {'kind', 'text'}
+              or target['kind'] not in (
+                  'named', 'back', 'relative', 'directional', 'exploratory', 'reference')
+              or not isinstance(target['text'], str) or not target['text'].strip()
+              or len(target['text']) > 2000):
+            raise LLMResponseError('map_manager: invalid movement target.', details=data)
+        return data
+
+
+class MovementResolverCall(LLMCall):
+    name = 'movement_resolver'
+    temperature = 0
+
+    def format_user_input(self, user_input):
+        return f'Resolve this already-extracted movement intent without changing its target:\n{user_input}'
+
+    @staticmethod
+    def validate_response(data):
+        if not isinstance(data, dict) or set(data) != {'destination', 'clarification'}:
+            raise LLMResponseError(
+                'movement_resolver: expected destination and clarification only.', details=data)
+        destination, clarification = data['destination'], data['clarification']
+        if destination is None:
+            if (not isinstance(clarification, str) or not clarification.strip()
+                    or len(clarification) > 1000):
+                raise LLMResponseError(
+                    'movement_resolver: unresolved movement requires clarification.', details=data)
+        elif (clarification is not None or not isinstance(destination, dict)
+              or set(destination) != {'name', 'description'}
+              or any(not isinstance(destination[field], str) or not destination[field].strip()
+                     or len(destination[field]) > 1000 for field in ('name', 'description'))):
+            raise LLMResponseError('movement_resolver: invalid destination.', details=data)
+        return data
 
 
 class NPCManagerCall(LLMCall):

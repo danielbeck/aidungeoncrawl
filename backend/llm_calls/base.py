@@ -55,10 +55,11 @@ class LLMResult(NamedTuple):
     model: str
 
 
-def default_transport(settings: Optional[dict] = None) -> Transport:
+def default_transport(settings: Optional[dict] = None, temperature: Optional[float] = None) -> Transport:
     """Build a transport that sends requests to the configured provider."""
     def transport(messages, schema, schema_name):
-        return chat(messages, schema, schema_name, settings=settings)
+        options = {'temperature': temperature} if temperature is not None else {}
+        return chat(messages, schema, schema_name, settings=settings, **options)
     return transport
 
 
@@ -66,12 +67,13 @@ class LLMCall(ABC):
     name = None  # type: str
     definitions_dir = DEFINITIONS_DIR
     include_schema_in_prompt = True
+    temperature = None
 
     def __init__(self, transport: Optional[Transport] = None, settings: Optional[dict] = None):
         if not self.name:
             raise TypeError(f'{type(self).__name__} must define `name`.')
         self.system_prompt, self.response_format = self.load_definition()
-        self._transport = transport or default_transport(settings)
+        self._transport = transport or default_transport(settings, self.temperature)
 
     @classmethod
     def load_definition(cls):

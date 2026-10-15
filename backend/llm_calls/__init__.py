@@ -16,24 +16,24 @@ try:
     from backend.llm_calls.base import LLMCall, LLMResponseError, LLMResult
     from backend.llm_calls.gameplay import (
         ComparatorCall, InventoryManagerCall, MapManagerCall, NPCManagerCall, NarratorCall,
-        HistorySummarizerCall,
+        HistorySummarizerCall, MovementResolverCall,
     )
     from backend.llm_calls.history import MessageHistory
 except ImportError:
     from llm_calls.base import LLMCall, LLMResponseError, LLMResult
     from llm_calls.gameplay import (
         ComparatorCall, InventoryManagerCall, MapManagerCall, NPCManagerCall, NarratorCall,
-        HistorySummarizerCall,
+        HistorySummarizerCall, MovementResolverCall,
     )
     from llm_calls.history import MessageHistory
 
 REGISTRY = {call.name: call for call in (
     ComparatorCall, InventoryManagerCall, MapManagerCall, NPCManagerCall, NarratorCall,
-    HistorySummarizerCall,
+    HistorySummarizerCall, MovementResolverCall,
 )}
 
 __all__ = [
     'LLMCall', 'LLMResponseError', 'LLMResult', 'MessageHistory', 'ComparatorCall',
     'InventoryManagerCall', 'MapManagerCall', 'NPCManagerCall', 'NarratorCall',
-    'HistorySummarizerCall', 'REGISTRY',
+    'HistorySummarizerCall', 'MovementResolverCall', 'REGISTRY',
 ]

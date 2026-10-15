@@ -146,7 +146,8 @@ function GamePage() {
               {progress.map((event, index) => (
                 <li key={index}>
                   <strong>{({
-                    inventory: 'Inventory manager', map: 'Map manager', npcs: 'NPC manager',
+                    inventory: 'Inventory manager', map: 'Movement intent', npcs: 'NPC manager',
+                    movement_resolver: 'Movement resolver',
                     narrator: 'Dungeon Master', comparator: 'Comparator', turn: 'Turn',
                     summarizer: 'History summarizer',
                   })[event.component] || event.component}</strong>
@@ -175,6 +176,7 @@ function GamePage() {
                       game_over: event.response.game_over,
                       notable_elements: event.response.notable_elements,
                       movement_outcome: event.response.movement_outcome,
+                      movement_resolution: event.response.movement_resolution,
                     }, null, 2)}</pre>
                   </details>}
                   {event.error && <p className={styles.error}>{event.error}</p>}

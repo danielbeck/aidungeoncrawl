@@ -1,43 +1,35 @@
 {
   "type": "object",
   "properties": {
-    "locations": {
-      "type": "array",
-      "description": "Player movement: empty for no movement, otherwise departure first (leave, copying current_location exactly) and destination second (enter). current_location is the starting room before the action, never the destination.",
-      "maxItems": 20,
-      "items": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 1000
+    "movement": {
+      "type": "boolean",
+      "description": "True for requests to travel, enter, leave, return, explore, or follow someone, even if the destination is unresolved. False for observations, negated or hypothetical movement."
+    },
+    "target": {
+      "anyOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000,
+              "description": "First extract the complete destination phrase. If a place is specified along with a direction, use the place: 'Head north towards the Great Forest' targets 'the Great Forest', not 'north'. Preserve unresolved references."
+            },
+            "kind": {
+              "type": "string",
+              "description": "A specified place takes priority: 'north towards the Great Forest' is named, NOT directional. named also includes place types (wilderness, tavern). reference: there/him; relative: outside; back: retracing; directional: direction or route WITHOUT a specified place; exploratory: open-ended exploration.",
+              "enum": ["named", "back", "relative", "directional", "exploratory", "reference"]
+            }
           },
-          "description": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 1000
-          },
-          "interaction": {
-            "type": "string",
-            "description": "leave means the player departs FROM this room; enter means the player arrives AT this room. The supplied current_location must be leave, not enter.",
-            "enum": [
-              "enter",
-              "leave"
-            ]
-          }
-        },
-        "required": [
-          "name",
-          "description",
-          "interaction"
-        ],
-        "additionalProperties": false
-      }
+          "required": ["text", "kind"],
+          "additionalProperties": false
+        }
+      ],
+      "description": "Null only when movement is false."
     }
   },
-  "required": [
-    "locations"
-  ],
+  "required": ["movement", "target"],
   "additionalProperties": false
 }

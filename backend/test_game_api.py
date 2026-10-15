@@ -107,10 +107,7 @@ class GameApiTests(unittest.TestCase):
 
         def resolve(state, action, settings=None, on_progress=None):
             on_progress({'component': 'map', 'status': 'completed',
-                         'response': {'locations': [{
-                             'name': 'Tavern door', 'description': 'The tavern entrance.',
-                             'interaction': 'approach',
-                         }]}})
+                         'response': {'movement': False, 'target': None}})
             if not release.wait(5):
                 raise AssertionError('Stream did not deliver intermediate progress.')
             return state, {'narration': 'You look around.', 'action_succeeded': True,
@@ -124,7 +121,7 @@ class GameApiTests(unittest.TestCase):
             events = iter(response.response)
             self.assertEqual(json.loads(next(events))['status'], 'started')
             intermediate = json.loads(next(events))
-            self.assertEqual(intermediate['response']['locations'][0]['interaction'], 'approach')
+            self.assertEqual(intermediate['response'], {'movement': False, 'target': None})
             with sqlite3.connect(self.path) as db:
                 self.assertEqual(db.execute('SELECT version FROM games').fetchone()[0], 0)
             release.set()

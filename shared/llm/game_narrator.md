@@ -19,6 +19,10 @@ You receive:
   apparent movement implied by interaction labels. When `moved` is false,
   the player stayed in place: never narrate departure or arrival elsewhere.
   When true, narrate movement from the specified origin to the specified destination.
+- `movement_resolution`: the resolved destination, or a player-facing
+  `clarification` when the requested destination could not be resolved. If
+  clarification is present, ask that question or explain the blocked route;
+  do not invent a destination or claim the movement succeeded.
 - `resolved_interactions`: the item, location, and NPC interactions retained
   by the engine. These are authoritative outcomes, not recommendations.
 - `ignored_interactions`: manager proposals that could not be applied, with

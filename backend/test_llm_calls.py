@@ -11,7 +11,7 @@ from backend import llm_provider
 from backend.endpoints.llm import bp as llm_bp
 from backend.llm_calls import (
     REGISTRY, InventoryManagerCall, LLMCall, LLMResponseError, MapManagerCall,
-    MessageHistory, NPCManagerCall,
+    MessageHistory, NPCManagerCall, MovementResolverCall,
 )
 
 TEST_DEFINITIONS_DIR = tempfile.mkdtemp()
@@ -167,13 +167,30 @@ class LLMCallTests(unittest.TestCase):
 
         self.assertEqual(QuietSchemaCall(transport=FakeTransport('')).build_system_prompt(), 'Do the thing.')
 
+    def test_movement_calls_use_deterministic_sampling_without_changing_other_calls(self):
+        with patch('backend.llm_calls.base.chat', return_value={
+                'provider': 'test', 'model': 'test', 'response': '{"movement":false,"target":null}',
+        }) as chat:
+            MapManagerCall().run('Wait.')
+            self.assertEqual(chat.call_args[1]['temperature'], 0)
+        with patch('backend.llm_calls.base.chat', return_value={
+                'provider': 'test', 'model': 'test',
+                'response': '{"destination":null,"clarification":"Which place?"}',
+        }) as chat:
+            MovementResolverCall().run('Go there.')
+            self.assertEqual(chat.call_args[1]['temperature'], 0)
+        with patch('backend.llm_calls.base.chat', return_value={
+                'provider': 'test', 'model': 'test', 'response': 'Hello',
+        }) as chat:
+            EchoCall().run('Hello')
+            self.assertNotIn('temperature', chat.call_args[1])
+
 
 class GameplayManagerResponseTests(unittest.TestCase):
     def test_manager_responses_only_allow_domain_entities_and_interactions(self):
         entity = {'name': 'Mira', 'description': 'The tavern keeper.', 'interaction': 'speak'}
         cases = (
             (InventoryManagerCall, 'items', 'take'),
-            (MapManagerCall, 'locations', 'enter'),
             (NPCManagerCall, 'npcs', 'speak'),
         )
         for call_class, field, interaction in cases:
@@ -188,6 +205,40 @@ class GameplayManagerResponseTests(unittest.TestCase):
                 invalid_interaction = dict(valid_entity, interaction='discuss motivation')
                 with self.assertRaises(LLMResponseError):
                     call.validate_response({field: [invalid_interaction]})
+
+    def test_movement_intent_contract(self):
+        for data in (
+                {'movement': False, 'target': None},
+                *({'movement': True, 'target': {'kind': kind, 'text': 'destination'}}
+                  for kind in ('named', 'back', 'relative', 'directional', 'exploratory', 'reference'))):
+            self.assertEqual(MapManagerCall.validate_response(data), data)
+        for data in (
+                {'locations': []}, {'movement': 'true', 'target': None},
+                {'movement': True, 'target': None},
+                {'movement': False, 'target': {'kind': 'named', 'text': 'Tavern'}},
+                {'movement': True, 'target': {'kind': 'unknown', 'text': 'Tavern'}},
+                {'movement': True, 'target': {'kind': 'named', 'text': ' '}},
+                {'movement': True, 'target': {'kind': 'named', 'text': 'x' * 2001}},
+                {'movement': True, 'target': {'kind': 'named', 'text': 'Tavern', 'id': 1}}):
+            with self.subTest(data=data), self.assertRaises(LLMResponseError):
+                MapManagerCall.validate_response(data)
+
+    def test_movement_resolution_contract(self):
+        for data in (
+                {'destination': {'name': 'Tavern', 'description': 'A tavern.'},
+                 'clarification': None},
+                {'destination': None, 'clarification': 'Which doorway?'}):
+            self.assertEqual(MovementResolverCall.validate_response(data), data)
+        for data in (
+                {'destination': None, 'clarification': None},
+                {'destination': None, 'clarification': ' '},
+                {'destination': {'name': 'Tavern', 'description': 'A tavern.'},
+                 'clarification': 'Which doorway?'},
+                {'destination': {'name': '', 'description': 'A tavern.'}, 'clarification': None},
+                {'destination': {'name': 'Tavern', 'description': 'A tavern.', 'id': 1},
+                 'clarification': None}):
+            with self.subTest(data=data), self.assertRaises(LLMResponseError):
+                MovementResolverCall.validate_response(data)
 
 
 class ProviderChatTests(unittest.TestCase):
@@ -222,6 +273,23 @@ class ProviderChatTests(unittest.TestCase):
         payload = post.call_args[0][1]
         self.assertEqual(payload['messages'], [{'role': 'user', 'content': 'prompt'}])
         self.assertEqual(payload['format'], {'type': 'object'})
+
+    def test_temperature_override_reaches_both_providers_without_mutating_config(self):
+        for provider, reply in (
+                ('ollama', {'message': {'content': 'hi'}}),
+                ('openrouter', {'choices': [{'message': {'content': 'hi'}}]})):
+            config = llm_provider.get_llm_config({
+                'LLM_PROVIDER': provider, 'OPENROUTER_API_KEY': 'test-key',
+            })
+            with self.subTest(provider=provider), patch.object(
+                    llm_provider, '_post_json', return_value=reply) as post:
+                llm_provider.chat(self.MESSAGES, config=config, temperature=0)
+            payload = post.call_args[0][1]
+            if provider == 'ollama':
+                self.assertEqual(payload['options'], {'temperature': 0})
+            else:
+                self.assertEqual(payload['temperature'], 0)
+            self.assertNotIn('temperature', config)
 
 
 class RunCallEndpointTests(unittest.TestCase):

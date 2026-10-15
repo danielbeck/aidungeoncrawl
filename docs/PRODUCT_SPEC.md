@@ -80,10 +80,15 @@ An exit should generally continue pointing to the same location once established
 
 The same location may be described differently on different turns. Its narrative description is not the authoritative representation of its identity, exits, or persistent object state.
 
-The map manager identifies a transition with one `leave` interaction for the
-current room and one `enter` interaction for the destination. Deterministic
-code resolves both rooms, creates reciprocal traversable exits if they do not
-already exist, marks the destination visited, and updates the current location.
+The map manager interprets movement using only the player's action, without
+seeing the current room, known destinations, or historical journeys. Named
+destinations are matched against existing places or created when new; relative,
+directional, exploratory, and referential targets are resolved separately using
+the relevant world context. "Go back" uses the last actual movement rather than
+prose history. Ambiguous references prompt clarification instead of redirecting
+the player to a familiar place. Deterministic code supplies the departure,
+creates reciprocal traversable exits if needed, marks the destination visited,
+and updates the current location.
 
 ### Items and inventory
 
