@@ -32,13 +32,16 @@ For square-to-tavern movement, return only square/leave and tavern/enter,
 NOT square/leave, square/enter, tavern/enter. Do not list intermediate rooms
 or duplicate the departure or destination.
 
-Return only this JSON object:
-{"locations":[{"name":"Town Square","description":"The town square outside the tavern","interaction":"leave"},{"name":"Tavern","description":"A cozy town tavern","interaction":"enter"}]}
+Return a JSON object with only a `locations` array. Each entry must contain exactly
+`name`, `description`, and `interaction`. Populate it only with the departure and
+destination for movement requested by `current_action`; do not invent locations
+to fill the output format. When no movement is requested, return {"locations":[]}.
 
 Each location must have a natural-language name, objective description, and
 interaction exactly `enter` or `leave`. If the player does not move, return an
 empty list. Do not create exits or decide persistent map state. Never include
 IDs, exit state, NPC or item details, prose assessments, or extra fields.
 
-Before responding, check that the `leave` entry exactly matches
-`current_location` and the `enter` entry identifies the destination.
+A common error is to reverse the `leave` and `enter` actions. Confirm that you do not have the player entering their current location.
+
+Before responding, verify that `current_action` requests movement. If it does not, return {"locations":[]}, even if `completed_history` describes movement. Otherwise, `leave` must match `current_location`, and `enter` must identify a different destination requested by `current_action`. 

@@ -4,7 +4,7 @@ import threading
 import unittest
 from types import SimpleNamespace
 
-from backend.game_engine import InvalidTurnResponse, new_game, process_turn
+from backend.game_engine import InvalidTurnResponse, _explicit_inventory_intent, new_game, process_turn
 from backend.llm_calls.gameplay import ComparatorCall, NarratorCall
 from backend.llm_provider import LLMError
 
@@ -63,6 +63,56 @@ def contains_key(value, key):
 
 
 class GameEngineTests(unittest.TestCase):
+    def test_explicit_inventory_intent_only_accepts_simple_named_commands(self):
+        for action in ('Take the iron key.', 'Please pick up my iron key!',
+                       'I want to collect an iron key'):
+            self.assertEqual(_explicit_inventory_intent(action), ('take', 'iron key'))
+        for action in ('Drop the beer.', 'Put down my beer', 'Leave behind the beer'):
+            self.assertEqual(_explicit_inventory_intent(action), ('drop', 'beer'))
+        for action in ("Don't drop the key", 'Take the key and drop the beer.',
+                       'Drop it', 'Take the key from Mira', 'If possible, take the key',
+                       'Take the key; leave the room', 'Pick up all keys'):
+            self.assertIsNone(_explicit_inventory_intent(action))
+
+    def test_explicit_command_corrects_reversed_inventory_operation(self):
+        for action, requested, wrong, holder in (
+                ('Pick up the key.', 'take', 'drop', 'location'),
+                ('Drop the key.', 'drop', 'take', 'player')):
+            game = new_game(7)
+            game['world']['items'].append({
+                'id': 'key', 'name': 'key', 'description': 'A key.', 'status': 'available',
+                'holder': {'type': holder, 'id': game['playerId'] if holder == 'player'
+                           else game['currentLocationId']},
+            })
+            proposal = {'name': 'key', 'description': 'A key.', 'interaction': wrong}
+            calls = fake_calls({'items': [proposal], 'locations': [], 'npcs': []})
+            events = []
+            with self.subTest(action=action), self.assertLogs(
+                    'backend.game_engine', level='WARNING'):
+                updated, result = process_turn(game, action, calls, on_progress=events.append)
+            self.assertEqual(result['manager_results']['inventory']['items'][0]['interaction'], wrong)
+            self.assertEqual(result['notable_elements']['items'][0]['interaction'], requested)
+            self.assertEqual(updated['world']['items'][0]['holder']['type'],
+                             'player' if requested == 'take' else 'location')
+            self.assertTrue(any(event['status'] == 'corrected' for event in events))
+            self.assertEqual(json.loads(calls['narrator'].inputs[0])['resolved_interactions']['items'],
+                             result['notable_elements']['items'])
+
+    def test_explicit_command_ignores_unrelated_item_and_missing_drop(self):
+        game = new_game(7)
+        calls = fake_calls({
+            'items': [
+                {'name': 'key', 'description': 'A key.', 'interaction': 'take'},
+                {'name': 'door', 'description': 'A door.', 'interaction': 'take'},
+            ],
+            'locations': [], 'npcs': [],
+        })
+        with self.assertLogs('backend.game_engine', level='WARNING'):
+            updated, result = process_turn(game, 'Drop the key.', calls)
+        self.assertEqual(updated['world']['items'], [])
+        self.assertEqual(result['notable_elements']['items'], [])
+        self.assertEqual(len(result['ignored_interactions']), 2)
+
     def test_new_game_has_simple_exchange_history(self):
         game = new_game(7)
         self.assertEqual(game['history'], {
@@ -386,7 +436,7 @@ class GameEngineTests(unittest.TestCase):
                          updated['currentLocationId'])
         self.assertEqual(result['reconciled_entities']['npcs'][0]['name'], 'Mira')
 
-    def test_engine_corrects_reversed_map_labels_before_narration(self):
+    def test_engine_ignores_reversed_map_labels_before_narration(self):
         game = new_game(7)
         calls = fake_calls(narration='You enter the tavern.')
         current = game['world']['locations'][0]
@@ -401,19 +451,64 @@ class GameEngineTests(unittest.TestCase):
         with self.assertLogs('backend.game_engine', level='WARNING') as logs:
             updated, result = process_turn(game, 'Enter the tavern.', calls)
 
-        self.assertIn('Correcting reversed map interactions', logs.output[0])
+        self.assertIn('Map departure does not match the current location', logs.output[0])
         self.assertEqual(game, original)
         self.assertEqual(result['manager_results']['map'], original_map)
         self.assertEqual(calls['map'].data, original_map)
         locations = result['notable_elements']['locations']
-        self.assertEqual([entry['interaction'] for entry in locations], ['leave', 'enter'])
-        tavern = updated['world']['locations'][1]
-        self.assertEqual(updated['currentLocationId'], tavern['id'])
+        self.assertEqual(locations, [])
+        self.assertEqual(updated['currentLocationId'], current['id'])
+        self.assertEqual(updated['world'], original['world'])
         self.assertEqual(current['exits'], [])
-        self.assertEqual(tavern['exits'][0]['destinationId'], current['id'])
         narrator_input = json.loads(calls['narrator'].inputs[0])
-        self.assertEqual(narrator_input['resolved_context']['current_location']['name'], 'Tavern')
+        self.assertEqual(narrator_input['resolved_context']['current_location']['name'],
+                         current['name'])
         self.assertEqual(narrator_input['resolved_interactions']['locations'], locations)
+        self.assertFalse(result['movement_outcome']['moved'])
+        self.assertEqual(narrator_input['ignored_interactions'][0]['component'], 'map')
+
+    def test_replayed_map_transition_does_not_reverse_movement_during_drop(self):
+        game = new_game(7)
+        current = game['world']['locations'][0]
+        transition = [
+            {'name': current['name'], 'description': current['description'],
+             'interaction': 'leave'},
+            {'name': 'Wilderness', 'description': ',', 'interaction': 'enter'},
+        ]
+        calls = fake_calls(notable={
+            'items': [{'name': 'tavern door', 'description': 'The door of the tavern',
+                       'interaction': 'take'}],
+            'locations': transition,
+            'npcs': [],
+        })
+        wilderness_game, _ = process_turn(game, 'Leave town and go into the wilderness', calls)
+        original = copy.deepcopy(wilderness_game)
+        calls = fake_calls(notable={
+            'items': [{'name': 'tavern door', 'description': 'The door of the tavern',
+                       'interaction': 'drop'}],
+            'locations': transition,
+            'npcs': [],
+        })
+        events = []
+
+        with self.assertLogs('backend.game_engine', level='WARNING'):
+            updated, result = process_turn(
+                wilderness_game, 'drop the tavern door', calls, on_progress=events.append)
+
+        self.assertEqual(wilderness_game, original)
+        self.assertEqual(updated['currentLocationId'], original['currentLocationId'])
+        self.assertEqual(updated['world']['locations'], original['world']['locations'])
+        self.assertEqual(updated['world']['items'][0]['holder'],
+                         {'type': 'location', 'id': original['currentLocationId']})
+        self.assertFalse(result['movement_outcome']['moved'])
+        self.assertEqual(result['notable_elements']['locations'], [])
+        self.assertEqual(result['manager_results']['map']['locations'], transition)
+        self.assertTrue(any(event['component'] == 'map' and event['status'] == 'ignored'
+                            for event in events))
+        narrator_input = json.loads(calls['narrator'].inputs[0])
+        self.assertEqual(narrator_input['resolved_context']['current_location']['name'],
+                         'Wilderness')
+        self.assertEqual(narrator_input['ignored_interactions'][0]['component'], 'map')
 
     def test_narrator_receives_resulting_inventory_and_context(self):
         game = new_game(7)
@@ -890,7 +985,7 @@ class GameEngineTests(unittest.TestCase):
             })
             calls['comparator'] = FakeCall({'same_entity': False})
             with self.subTest(name=name, description=description):
-                updated, result = process_turn(game, 'Drop the key.', calls)
+                updated, result = process_turn(game, 'Drop the iron key.', calls)
             self.assertEqual(calls['comparator'].inputs, [])
             self.assertEqual(result['reconciled_entities']['items'][0]['id'], 'key-existing')
             self.assertEqual(updated['world']['items'][0]['description'], 'A small iron key.')

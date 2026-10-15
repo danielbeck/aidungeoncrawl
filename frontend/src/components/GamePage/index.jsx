@@ -67,7 +67,17 @@ function GamePage() {
       setGame(data.game)
       setAction('')
       requestId.current = null
-      setProgress(events => [...events, { component: 'turn', status: 'saved' }])
+      setProgress(events => [...events, {
+        component: 'turn',
+        status: 'saved',
+        response: {
+          currentLocationId: data.game.currentLocationId,
+          current_location: data.game.world.locations.find(
+            location => location.id === data.game.currentLocationId,
+          ),
+          movement_outcome: data.turn.movement_outcome,
+        },
+      }])
     } catch (err) {
       setError(err.message)
     } finally {
@@ -142,7 +152,9 @@ function GamePage() {
                   {' — '}{event.status}{event.attempt ? ` (attempt ${event.attempt})` : ''}
                   {event.provider && <small>{' '}{event.provider}/{event.model}</small>}
                   {event.reason && <p>{event.reason}</p>}
-                  {event.request && <details open={event.component === 'comparator'}>
+                  {event.request && <details open={
+                    event.component === 'comparator' || event.component === 'narrator'
+                  }>
                     <summary>Request debug details</summary>
                     <pre>{JSON.stringify(event.request, null, 2)}</pre>
                   </details>}
@@ -155,8 +167,8 @@ function GamePage() {
                   }, null, 2)}</pre>}
                   {event.response && <pre>{event.response.narration
                     || JSON.stringify(event.response, null, 2)}</pre>}
-                  {event.component === 'narrator' && event.response && <details>
-                    <summary>Notable-entity debug details</summary>
+                  {event.component === 'narrator' && event.response && <details open>
+                    <summary>Resolved turn debug details</summary>
                     <pre>{JSON.stringify({
                       action_succeeded: event.response.action_succeeded,
                       game_over: event.response.game_over,

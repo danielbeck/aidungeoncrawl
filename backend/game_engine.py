@@ -331,16 +331,12 @@ def _apply_map_interactions(state, manager_result, comparator, on_progress=None)
         state, 'locations', leaving[0], comparator, current_id, create_if_missing=False,
         on_progress=on_progress)
     if origin is None or origin['id'] != current_id:
-        entered = _resolve_entity(
-            state, 'locations', entering[0], comparator, current_id, create_if_missing=False,
-            on_progress=on_progress)
-        if entered is None or entered['id'] != current_id:
-            raise InvalidTurnResponse('Map transition must identify the current location.')
-        logger.warning('Correcting reversed map interactions for game %s.', state['id'])
-        entering[0]['interaction'] = 'leave'
-        leaving[0]['interaction'] = 'enter'
-        entering, leaving = leaving, entering
-        origin = current
+        reason = 'Map departure does not match the current location; no movement was applied.'
+        logger.warning('%s Game %s.', reason, state['id'])
+        if on_progress is not None:
+            on_progress('map', 'ignored', response=copy.deepcopy(locations), reason=reason)
+        manager_result['locations'] = []
+        return []
     if _normalized_text(entering[0]['name']) == _normalized_text(current['name']):
         destination = current
     else:
@@ -370,8 +366,26 @@ def _apply_map_interactions(state, manager_result, comparator, on_progress=None)
     }]
 
 
+def _explicit_inventory_intent(action):
+    match = re.fullmatch(
+        r'\s*(?:please\s+)?(?:(?:I\s+)?(?:want\s+to\s+)?)'
+        r'(pick\s+up|take|collect|drop|put\s+down|leave\s+behind)\s+'
+        r'([\w\s\'-]+?)[.!]?\s*', action, flags=re.IGNORECASE)
+    if match is None:
+        return None
+    target = _normalized_text(match.group(2))
+    if (not target or any(word in target.split() for word in (
+            'and', 'or', 'then', 'if', 'unless', 'not', 'never', 'it', 'them',
+            'everything', 'all', 'from', 'to', 'on', 'in', 'with'))):
+        return None
+    target = re.sub(r'^(?:the|a|an|my)\s+', '', target)
+    operation = 'drop' if _normalized_text(match.group(1)) in (
+        'drop', 'put down', 'leave behind') else 'take'
+    return operation, target
+
+
 def _apply_inventory_interactions(state, manager_result, comparator, current_location_id,
-                                  on_progress=None):
+                                  on_progress=None, action=''):
     if not isinstance(manager_result, dict) or set(manager_result) != {'items'}:
         raise InvalidTurnResponse('Inventory manager must return only an items list.')
     items = manager_result['items']
@@ -384,6 +398,7 @@ def _apply_inventory_interactions(state, manager_result, comparator, current_loc
     }
     resolved = []
     applied = []
+    explicit_intent = _explicit_inventory_intent(action)
     for proposed in items:
         if (not isinstance(proposed, dict)
                 or set(proposed) != {'name', 'description', 'interaction'}
@@ -391,6 +406,24 @@ def _apply_inventory_interactions(state, manager_result, comparator, current_loc
                 or not isinstance(proposed.get('description'), str) or not proposed['description'].strip()
                 or proposed.get('interaction') not in ('take', 'drop')):
             raise InvalidTurnResponse('Inventory manager returned an invalid item interaction.')
+        if explicit_intent is not None:
+            intended_operation, target = explicit_intent
+            name = re.sub(r'^(?:the|a|an|my)\s+', '', _normalized_text(proposed['name']))
+            if name != target:
+                reason = 'Item does not match the target of the explicit inventory command.'
+                logger.warning('Ignoring inventory proposal for %s: %s', proposed['name'], reason)
+                if on_progress is not None:
+                    on_progress('inventory', 'ignored', proposed_entity=copy.deepcopy(proposed),
+                                reason=reason)
+                continue
+            if proposed['interaction'] != intended_operation:
+                original_interaction = proposed['interaction']
+                proposed['interaction'] = intended_operation
+                reason = f'Corrected {original_interaction} to {intended_operation} from current_action.'
+                logger.warning('%s Item %s in game %s.', reason, proposed['name'], state['id'])
+                if on_progress is not None:
+                    on_progress('inventory', 'corrected',
+                                proposed_entity=copy.deepcopy(proposed), reason=reason)
         interaction = proposed['interaction']
         player_holder = {'type': 'player', 'id': state['playerId']}
         location_holder = {'type': 'location', 'id': current_location_id}
@@ -526,7 +559,7 @@ def process_turn(state, action, calls=None, settings=None, on_progress=None):
     try:
         manager_items = _apply_inventory_interactions(
             candidate, effective_manager_results['inventory'], calls['comparator'],
-            current_location_id, on_progress=progress)
+            current_location_id, on_progress=progress, action=action)
         manager_locations = _apply_map_interactions(
             candidate, effective_manager_results['map'], calls['comparator'], on_progress=progress)
         current_location_id = candidate['currentLocationId']

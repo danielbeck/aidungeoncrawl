@@ -25,13 +25,22 @@ Every persistent entity has a stable ID assigned and managed by deterministic co
 
 Code resolves unique exact identities first; otherwise the Comparator decides whether a proposal and one candidate refer to the same entity. It returns only boolean `same_entity`. Code retains the candidate's canonical record and ID, so the LLM never generates an index or ID. A single positive match resolves the entity, no matches permit creation only when allowed, and multiple matches reject the turn as ambiguous. Canonical entities are returned in `reconciled_entities`.
 
-Map and inventory interactions from their managers are applied deterministically on a candidate state before narration. A paired `leave`/`enter` moves the player, creates or resolves the destination through the Comparator, marks it visited, and ensures traversable exits connect the two locations in both directions. The stored current location identifies the departure: if the manager reverses the two labels, code corrects them after Comparator matching and logs the correction. A pair that does not identify the current location remains invalid. `take` resolves or creates the item and places it in the player's inventory; `drop` must resolve an existing carried item and places it in the current location. Inventory is processed before movement so drops land in the room being left. NPC entries are reconciled at the resulting location but do not change an existing NPC's location or status. Transfers to NPCs and consumption remain unsupported.
+Map and inventory interactions from their managers are applied deterministically on a candidate state before narration. A paired `leave`/`enter` moves the player, creates or resolves the destination through the Comparator, marks it visited, and ensures traversable exits connect the two locations in both directions. The departure must match the stored current location. Mismatched departures are ignored with a warning and a map progress event, and passed to the narrator as ignored interactions; labels are never automatically reversed. This prevents a replayed previous transition from moving the player back. `take` resolves or creates the item and places it in the player's inventory; `drop` must resolve an existing carried item and places it in the current location. Inventory is processed before movement so drops land in the room being left. NPC entries are reconciled at the resulting location but do not change an existing NPC's location or status. Transfers to NPCs and consumption remain unsupported.
 
 ## LLM components
 
 Each component has a distinct responsibility and receives only the natural-language context it needs. Manager responses are schema-constrained, domain-specific reports for the Narrator; they do not directly mutate state.
 
 ### Inventory manager
+
+Code recognizes simple, explicit named-item commands (take/pick up/collect and
+drop/put down/leave behind). It corrects reversed manager labels only when the
+full normalized target name matches, ignoring a leading article or "my".
+Unrelated item proposals for such commands are ignored with a reason. Corrections
+are logged and displayed in progress; original manager output is retained.
+Ownership and availability checks still apply after correction. Compound,
+conditional, negated, pronoun-based, or otherwise unsupported wording is not
+guessed by this guard and continues through the existing manager interpretation.
 
 Returns only an `items` list. Each entry has a natural-language name and objective description and is classified as `take` or `drop`. The deterministic engine resolves each item against the canonical item list: take moves an available local item into inventory (or creates a newly established item), while drop moves a matched carried item to the current location. It receives carried items and items or known objects in the current location, and does not assess NPC behavior or movement.
 
@@ -116,7 +125,7 @@ The deterministic turn processor coordinates each gameplay turn:
 3. In parallel, send each manager the action and the context relevant to its responsibility.
 4. Copy the saved state and manager interpretations into a candidate turn.
 5. Apply inventory interactions through Comparator matches. Drops land in the starting room.
-6. Resolve map interactions against the stored current location, correcting reversed labels when unambiguous, and apply movement and reciprocal exits.
+6. Resolve map interactions against the stored current location, ignore mismatched departures without reversing labels, and apply valid movement and reciprocal exits.
 7. Reconcile NPC entries at the resulting location through the Comparator.
 8. Give the Narrator starting and resulting context plus resolved interactions. Validate its narration and boolean outcome flags; do not ask it to echo state.
 9. Append the player action and narration to history, then commit the completed turn.

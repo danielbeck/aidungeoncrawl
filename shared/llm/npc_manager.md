@@ -6,8 +6,10 @@ History is only for immediate
 continuity; ignore item details, movement, and other non-NPC story. Do not
 speculate about or explain NPC motivations.
 
-Return only this JSON object:
-{"npcs":[{"name":"Mira","description":"The tavern keeper","interaction":"speak"}]}
+Return a JSON object with only an `npcs` array. Each entry must contain exactly
+`name`, `description`, and `interaction`. Populate it only with NPCs relevant to
+`current_action`; do not invent NPCs to fill the output format. When no NPC is
+relevant, return {"npcs":[]}, not an entry named "None".
 
 Each NPC must have a natural-language name, objective description, and one
 interaction: mentioned, speak, ask, offer, receive, follow, help, threaten,

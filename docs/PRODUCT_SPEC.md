@@ -48,7 +48,8 @@ The LLM may elaborate on established facts but should not contradict them withou
 
 Managers interpret actions, and deterministic code resolves their results
 directly against stored state before narration. The current location identifies
-the departure even when a map manager reverses enter/leave labels. The narrator
+the departure; mismatched departures are reported and ignored, never automatically
+reversed. The narrator
 describes the resolved outcome; it does not echo or override state, and a turn
 does not depend on matching entity lists between LLMs. Original and effective
 manager results are retained in the turn response.
