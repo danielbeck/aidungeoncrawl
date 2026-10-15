@@ -246,7 +246,6 @@ class GameplayManagerResponseTests(unittest.TestCase):
                 {'destination': None, 'clarification': 'Which doorway?'}):
             self.assertEqual(MovementResolverCall.validate_response(data), data)
         for data in (
-                {'destination': None, 'clarification': None},
                 {'destination': None, 'clarification': ' '},
                 {'destination': {'name': 'Tavern', 'description': 'A tavern.'},
                  'clarification': 'Which doorway?'},
@@ -255,6 +254,16 @@ class GameplayManagerResponseTests(unittest.TestCase):
                  'clarification': None}):
             with self.subTest(data=data), self.assertRaises(LLMResponseError):
                 MovementResolverCall.validate_response(data)
+
+    def test_null_resolution_recovers_with_logged_clarification(self):
+        raw = '{"destination":null,"clarification":null}'
+        with self.assertLogs('backend.llm_calls.gameplay', level='WARNING') as logs:
+            result = MovementResolverCall(transport=FakeTransport(raw)).run('Go there.')
+        self.assertEqual(result.data, {
+            'destination': None, 'clarification': 'Where would you like to go?',
+        })
+        self.assertEqual(result.raw, raw)
+        self.assertIn('without moving', logs.output[0])
 
 
 class ProviderChatTests(unittest.TestCase):

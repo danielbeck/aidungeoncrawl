@@ -291,6 +291,10 @@ def _add_exit(origin, destination):
 def _resolve_movement(state, intent, context, calls, progress):
     MapManagerCall.validate_response(intent)
     if not intent['movement']:
+        progress('movement_resolver', 'skipped', llm=False,
+                 request={'movement_intent': intent},
+                 reason='No travel requested; destination resolution is unnecessary.',
+                 response={'destination': None, 'clarification': None})
         return [], [], None
 
     current_id = state['currentLocationId']
@@ -309,6 +313,7 @@ def _resolve_movement(state, intent, context, calls, progress):
             'clarification': None,
         }
         progress('movement_resolver', 'skipped', llm=False,
+                 request={'movement_intent': intent},
                  reason='Named destination goes directly to identity matching.', response=resolution)
     elif target['kind'] == 'back':
         destination = previous
@@ -317,6 +322,13 @@ def _resolve_movement(state, intent, context, calls, progress):
             'clarification': None if previous else 'Which location would you like to return to?',
         }
         progress('movement_resolver', 'skipped', llm=False,
+                 request={
+                     'movement_intent': intent,
+                     'last_movement': {
+                         'from_location': _display_entity(previous),
+                         'to_location': context['current_location'],
+                     } if previous else None,
+                 },
                  reason='Return destination comes from the last actual movement.', response=resolution)
     else:
         request = {
@@ -581,6 +593,8 @@ def process_turn(state, action, calls=None, settings=None, on_progress=None):
     logger.info('Player action for game %s: %s', state['id'], action)
     for key in ('inventory', 'map', 'npcs'):
         progress(key, 'started', request=manager_contexts[key])
+    progress('movement_resolver', 'waiting',
+             reason='Waiting for movement intent and inventory reconciliation.')
     with ThreadPoolExecutor(max_workers=3) as executor:
         futures = {
             executor.submit(_run_logged, key, calls[key], manager_contexts[key]): key

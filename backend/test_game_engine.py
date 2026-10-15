@@ -78,6 +78,25 @@ def contains_key(value, key):
 
 
 class GameEngineTests(unittest.TestCase):
+    def test_movement_resolver_progress_includes_deterministic_paths(self):
+        for intent in (
+                {'movement': False, 'target': None},
+                movement_intent('Tavern'),
+                movement_intent('Go back', 'back')):
+            with self.subTest(intent=intent):
+                calls = fake_calls()
+                calls['map'].data = intent
+                events = []
+                process_turn(new_game(7), 'Test action.', calls, on_progress=events.append)
+                resolver = [event for event in events
+                            if event['component'] == 'movement_resolver']
+                self.assertEqual([event['status'] for event in resolver], ['waiting', 'skipped'])
+                self.assertEqual(resolver[-1]['request']['movement_intent'], intent)
+                self.assertIn('destination', resolver[-1]['response'])
+                self.assertTrue(resolver[-1]['reason'])
+                self.assertFalse(resolver[-1]['llm'])
+                self.assertEqual(calls['movement_resolver'].inputs, [])
+
     def test_map_round_trip_does_not_redirect_new_named_destination_to_previous_room(self):
         for action, destination in (
                 ('Go to C.', 'C'), ('Make my way to the tavern.', 'the tavern'),
@@ -677,8 +696,14 @@ class GameEngineTests(unittest.TestCase):
             self.assertNotIn('historical_summary', request)
             self.assertEqual(updated['world']['locations'][-1]['name'], 'Forest Trail')
             self.assertEqual(result['movement_resolution'], calls['movement_resolver'].data)
-            self.assertTrue(any(event['component'] == 'movement_resolver'
-                                and event['status'] == 'completed' for event in events))
+            resolver = [event for event in events
+                        if event['component'] == 'movement_resolver']
+            self.assertEqual([event['status'] for event in resolver],
+                             ['waiting', 'started', 'completed'])
+            self.assertEqual(resolver[1]['request'], request)
+            self.assertEqual(resolver[2]['response'], calls['movement_resolver'].data)
+            self.assertEqual(resolver[2]['provider'], 'test')
+            self.assertEqual(resolver[2]['model'], 'test-model')
 
     def test_ambiguous_movement_requests_clarification_without_changing_map(self):
         game = new_game(7)
@@ -750,7 +775,7 @@ class GameEngineTests(unittest.TestCase):
         game = new_game(7)
         calls = fake_calls()
         calls['map'].data = movement_intent('north', 'directional')
-        calls['movement_resolver'].data = {'destination': None, 'clarification': None}
+        calls['movement_resolver'].data = {'destination': None, 'clarification': ' '}
         original = copy.deepcopy(game)
         events = []
         with self.assertRaises(LLMError):
@@ -759,6 +784,28 @@ class GameEngineTests(unittest.TestCase):
         self.assertEqual(calls['narrator'].inputs, [])
         self.assertTrue(any(event['component'] == 'movement_resolver'
                             and event['status'] == 'failed' for event in events))
+
+    def test_null_movement_resolution_continues_without_moving(self):
+        game = new_game(7)
+        calls = fake_calls()
+        calls['map'].data = movement_intent('there', 'reference')
+        calls['movement_resolver'].data = {'destination': None, 'clarification': None}
+        events = []
+        with self.assertLogs('backend', level='WARNING'):
+            updated, result = process_turn(game, 'Go there.', calls, on_progress=events.append)
+        self.assertEqual(updated['world'], game['world'])
+        self.assertEqual(updated['currentLocationId'], game['currentLocationId'])
+        self.assertFalse(result['movement_outcome']['moved'])
+        resolution = {'destination': None, 'clarification': 'Where would you like to go?'}
+        self.assertEqual(result['movement_resolution'], resolution)
+        narrator = json.loads(calls['narrator'].inputs[0])
+        self.assertEqual(narrator['movement_resolution'], resolution)
+        self.assertEqual(narrator['ignored_interactions'][0]['reason'], resolution['clarification'])
+        self.assertTrue(any(event['component'] == 'movement_resolver'
+                            and event['status'] == 'completed'
+                            and event['response'] == resolution for event in events))
+        self.assertEqual(len(updated['history']['recentEvents']),
+                         len(game['history']['recentEvents']) + 2)
 
     def test_inventory_take_and_drop_move_existing_and_new_items(self):
         game = new_game(7)

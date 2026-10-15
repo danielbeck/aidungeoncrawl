@@ -95,6 +95,11 @@ class MovementResolverCall(LLMCall):
                 'movement_resolver: expected destination and clarification only.', details=data)
         destination, clarification = data['destination'], data['clarification']
         if destination is None:
+            if clarification is None:
+                logger.warning(
+                    'movement_resolver: missing destination and clarification; '
+                    'requesting destination clarification without moving.')
+                return {**data, 'clarification': 'Where would you like to go?'}
             if (not isinstance(clarification, str) or not clarification.strip()
                     or len(clarification) > 1000):
                 raise LLMResponseError(

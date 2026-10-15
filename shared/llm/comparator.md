@@ -11,7 +11,7 @@ Identical names and descriptions indicate a match.
 
 Example: candidate "Town Square Outside the Tavern" / "The town square outside
 the tavern." and proposed "Tavern" / "A cozy town tavern.":
-{"same_entity":false}
+{"same_entity":true}
 
 The input contains natural-language entity data only. Do not invent IDs,
 statuses, locations, or other internal state.

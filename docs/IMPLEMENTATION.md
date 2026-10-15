@@ -57,6 +57,9 @@ movement flags, and malformed targets for true still fail validation.
   NPCs. The response contains `destination` and `clarification`: either an
   objective destination or a question/explanation, not an invented substitute
   for an ambiguous reference.
+  A response with both fields null is recovered with a logged warning and
+  "Where would you like to go?" clarification. No movement is applied; narration
+  and other valid turn effects can continue. Other malformed responses still fail.
 
 An explicit destination takes precedence over a direction. Exploratory travel
 can name the area being explored without specifying a destination to reach.
@@ -184,6 +187,10 @@ Progress retains one entry per operation, updating waiting, started, received,
 and saving statuses in place. Repeated calls retain separate entries. Pending
 operations show spinners; stream failures mark them interrupted. Request,
 response, and entity details are collapsed by default.
+Movement resolution has its own entry every turn, initially waiting for intent
+and inventory reconciliation. Contextual calls show request/response and provider
+details; no-travel, named, and return paths show deterministic inputs/results
+and a skipped-call reason without implying an LLM was invoked.
 
 Comparator progress exposes individual LLM candidate/proposal comparisons and
 results, while deterministic matches, deterministic ambiguities, and
