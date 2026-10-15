@@ -1,116 +1,83 @@
-# Backend README
+# Backend
 
-## Overview
+Flask and SQLite provide an authenticated text-adventure API. The application
+owns canonical state; LLMs interpret actions and narrate resolved outcomes.
+It runs as a local Flask server or as CGI on shared hosting.
 
-This backend provides an authenticated text-adventure API using Python Flask and SQLite. The engine stores authoritative world state and deterministically reconciles LLM-reported notable entities. It runs as a Flask server locally and as a CGI application on shared hosting.
+## Layout
 
-## Directory Structure and File Explanations
+| Path | Responsibility |
+|---|---|
+| `app.py` | Flask setup, logging, database helpers, response controls, and blueprints. |
+| `api.cgi`, `cgi_app.py` | Apache CGI launcher and Python entry point. |
+| `session_secret.py` | Local/private settings and required session key. |
+| `account_schema.py`, `init_db.py` | Additive account migrations and initial database setup. |
+| `reset_email.py` | TLS-protected password-reset email. |
+| `game_engine.py` | State, entity identity, and turn orchestration. |
+| `endpoints/` | Account, gameplay, and LLM APIs. |
+| `llm_calls/`, `../shared/llm/` | LLM call implementations and prompt/schema definitions. |
+| `config_helper.py` | Legacy environment/config.json deployment helper. |
+| `database/`, `logs/` | Private SQLite data and diagnostic output. |
 
-- **app.py**: Main Flask application. Sets up the app, logging, error handling, database helpers, and registers all endpoints (via Blueprints).
-- **api.cgi**: Shell CGI launcher that uses Apache's `SCRIPT_FILENAME` to run the adjacent virtualenv Python and `cgi_app.py`, avoiding unreliable Python shebangs and CGI working directories.
-- **cgi_app.py**: Python CGI entry point; resolves its backend directory and logs startup/import failures in `logs/cgi_error.log`.
-- **session_secret.py**: Loads private account configuration and the session signing key without a hardcoded fallback.
-- **account_schema.py**: Additive, idempotent email-account and password-reset migrations.
-- **reset_email.py**: Sends password reset emails using authenticated TLS-protected SMTP.
-- **config_helper.py**: Utility for reading deployment configuration from config.json and determining backend paths.
-- **init_db.py**: Script to initialize account storage; gameplay tables are created when needed.
-- **game_engine.py**: Authoritative game-state model, entity identity reconciliation, and LLM turn orchestration.
-- **logging_helper.py**: Helper for logging exceptions from CGI scripts to backend/logs/cgi_error.log.
-- **requirements.txt**: Python dependencies for the backend (Flask, Flask-CORS, etc).
-- **endpoints/**: Directory containing modularized Flask Blueprints for each API endpoint.
-    - **game.py**: Authenticated endpoints for loading, starting, playing, and ending an adventure.
-    - **auth.py**: Email registration/login, logout, current-user, and password recovery endpoints.
-- **llm_calls/gameplay.py** and **shared/llm/**: Structured calls and prompt/schema definitions for the inventory, movement intent, movement resolution, NPC, narrator, and comparator roles.
-- **database/**: Contains the SQLite database file (app.db).
-- **logs/**: Stores log files for Flask and CGI error logging.
-    - **flask_error.log**: Logs unhandled exceptions from Flask app.
-    - **cgi_error.log**: Logs exceptions from CGI scripts.
-    - **server.log**: (Optional) General server logs.
-- **__pycache__/**: Python bytecode cache (auto-generated).
+## Setup and hosting
 
-## Setup
+Follow the root [development setup](../README.md#run-locally). A stable, non-empty
+`SECRET_KEY` is required in every environment. Configuration sources, SMTP,
+provider settings, and production paths are documented in [CONFIG.md](../CONFIG.md).
 
-Set a random, stable `SECRET_KEY` in the project-root `.env`. Local startup
-loads that key unless the process environment overrides it. Missing or empty
-keys stop startup. Do not commit `.env` or copy it into the web root.
+The CGI shell launcher uses Apache's `SCRIPT_FILENAME` to locate its adjacent
+virtualenv and Python entry point. Startup/import failures go to
+`logs/cgi_error.log`. Private settings are read on each CGI request; changing the
+session key invalidates sessions, not accounts or saved adventures.
 
-Deployment transfers the key, SMTP settings, reset URL, and production cookie setting over SSH, without printing secrets, to
-`~/.config/react-python-sqlite-boilerplate/session.json` outside the web root.
-The directory uses permissions 700 and the file 600. CGI reads this private
-file on every request; `APP_SECRET_FILE` overrides the path. Changing the key
-invalidates existing sessions, not accounts or saved adventures. For additional deployed
-apps, use a distinct private path in both `deploy.sh` and `cgi_app.py`.
+Deployment checks the virtualenv's Python major/minor version and pip. If hosting
+upgrades invalidate it, the old environment is preserved under
+`venv-backup.*/venv` and a fresh one is created. Dependencies are installed through
+`venv/bin/python -m pip`; installation/import failures stop deployment.
 
-`FLASK_ENV=production` enables secure-only cookies and is only set automatically
-during deployment when `PRODUCTION_DOMAIN` uses HTTPS; plain-HTTP deployments
-keep non-secure cookies so sessions still work. A secret key does not encrypt
-HTTP traffic.
+## Account API
 
-Authentication uses Flask-Limiter's automatic request hook, not a manual
-`check()` call on its extension, which newer releases store as a set.
+| Endpoint | Request or result |
+|---|---|
+| `POST /auth/register` | `{"email":"person@example.com","password":"YourPassword123"}` |
+| `POST /auth/login` | Same request fields as registration. |
+| `POST /auth/logout` | Clear the login session. |
+| `GET /auth/me` | Current email or `null`. |
+| `POST /auth/forgot-password` | `{"email":"person@example.com"}` |
+| `POST /auth/reset-password` | `{"token":"<emailed-token>","password":"NewPassword123","confirm_password":"NewPassword123"}` |
 
-Deployment checks that the virtualenv's recorded Python major/minor version
-matches its interpreter and that pip is importable. Hosting Python upgrades can
-invalidate an old virtualenv. In that case the old environment is preserved
-under `backend/venv-backup.*/venv` and a fresh one is created. All dependencies
-are installed using `venv/bin/python -m pip`; installation or import failures
-stop deployment instead of falling back to an incomplete dependency list.
+Emails are normalized for case-insensitive lookup and uniqueness. Passwords
+require 8-128 characters including uppercase, lowercase, and a number.
 
-1. Install Python dependencies:
-    ```bash
-    pip3 install -r requirements.txt
-    ```
-2. Initialize the database:
-    ```bash
-    python3 init_db.py
-    ```
-    This will create:
-    - `database/app.db` - SQLite database file
+Recovery requests return the same generic confirmation for known and unknown
+accounts. Links expire after 900 seconds and are stored only as SHA-256 hashes.
+A replacement invalidates the old link; a persistent 60-second per-account
+cooldown prevents resending across CGI processes. SMTP failures are logged and
+return HTTP 503 rather than claiming delivery succeeded.
 
-3. Start the Flask development server:
-    ```bash
-    python3 app.py
-    ```
+Links use `/reset-password#token=...` to keep the token out of HTTP URLs and
+access logs. The UI removes the fragment after capture. Opening the link does
+not consume it; only a successful reset does. Password validation failures
+preserve the token. Successful resets revoke existing sessions and require login.
 
-## API Examples
+Account migrations preserve existing rows. Legacy username-only accounts cannot
+log in or request recovery; register an email-based account. The legacy username
+column remains for compatibility and stores the email for new accounts.
 
-- `POST /auth/register` and `POST /auth/login`: `{"email":"person@example.com","password":"YourPassword123"}`
-- `POST /auth/logout`: clear the login session
-- `GET /auth/me`: current email or `null`
-- `POST /auth/forgot-password`: `{"email":"person@example.com"}`; returns the same generic confirmation for known and unknown emails
-- `POST /auth/reset-password`: `{"token":"<emailed-token>","password":"NewPassword123","confirm_password":"NewPassword123"}`
+The frontend uses Vite's development proxy or the production CGI path. Account
+forms display JSON errors and explicitly report non-JSON routing/backend failures.
 
-Password reset links expire exactly 900 seconds after issuance, are single-use,
-and are stored only as SHA-256 hashes. A replacement link invalidates the previous
-link; requests for the same account within 60 seconds do not resend. This cooldown
-is stored in SQLite and works across CGI processes. SMTP errors are logged and
-return HTTP 503 rather than claiming delivery succeeded. Password validation and
-confirmation failures do not consume the link. Successful resets invalidate all
-existing sessions for that account and require a fresh login.
+## Gameplay API
 
-Links use `/reset-password#token=...` so the token is not sent in HTTP URLs or
-access logs; the UI removes the fragment after capturing it. Opening the email
-link does not consume it; only submitting the new password does.
+All gameplay endpoints require an authenticated session.
 
-Existing databases are migrated at startup and deployment without deleting users
-or other account data. Legacy username-only accounts have no email and cannot log in or request
-recovery; register new email-based accounts. The legacy database `username` column
-remains for schema compatibility and stores the email for new accounts.
-
-Configure SMTP and link destinations as described in [CONFIG.md](../CONFIG.md).
-To run the account regression suite from the repository root:
-
-```bash
-python3 -m unittest backend.test_account_backport backend.test_password_reset
-```
-
-The frontend uses the Vite `<BASE_URL>api` proxy in development and the CGI URL
-in production. Backend JSON validation errors are shown on the account forms;
-non-JSON responses explicitly report a backend/routing failure.
-
-### Gameplay API
-
-Gameplay endpoints require an authenticated session.
+| Endpoint | Purpose |
+|---|---|
+| `GET /game/` | Load or initialize the user's saved adventure. |
+| `POST /game/new` | Replace it with a fresh adventure. |
+| `POST /game/turn` | Process `action`, `game_id`, and UUID `request_id`. |
+| `POST /game/prepare` | Prepare summarized history for `game_id`. |
+| `POST /game/stop` | End the adventure. |
 
 ```bash
 curl -b cookies.txt -c cookies.txt http://localhost:8000/game/
@@ -119,67 +86,57 @@ curl -b cookies.txt -c cookies.txt -X POST http://localhost:8000/game/turn \
   -d '{"action":"Enter the tavern","game_id":"<game-id>","request_id":"<uuid>"}'
 ```
 
-`GET /game/` loads or creates the player's saved adventure. `POST /game/new`
-replaces it with a fresh adventure; `POST /game/stop` ends it. A turn uses
-domain-scoped inventory and NPC reports plus movement intent extracted without
-map candidates or history. Named destinations go directly to identity matching;
-context-dependent movement uses a separate resolver, and "go back" uses recorded
-movement IDs. Unresolved movement asks for clarification without moving the player.
-The server
-validates all proposed state changes and commits the turn atomically; `request_id`
-makes retries of a completed turn idempotent.
+Managers report inventory/NPC interactions and movement intent. Code reconciles
+these before the narrator returns only `narration`, `action_succeeded`, and
+`game_over`. There is no narrator state-operation payload or correction loop.
+Supported persistent changes and component contracts are documented once in
+[Implementation](../docs/IMPLEMENTATION.md).
 
-Narrator operations use actual JSON objects for `payload`, not JSON-encoded
-strings. Legacy valid string payloads remain readable by the engine. A rejected
-narrator response gets one correction attempt with validation feedback against
-the unchanged state. If correction also fails, the turn returns an error without
-saving any proposed changes; provider connectivity errors are not retried here.
-Corrections must retain applicable changes, not erase them to avoid validation.
-A correction that drops every operation while repeating the same successful
-narration is rejected without saving that turn.
+Saving is atomic and version-checked. Reusing a completed `request_id` returns
+the saved result. Invalid model responses do not partially change state.
+Summary preparation is a separate post-turn request; it does not delay returning
+the saved narration.
 
-The narrator schema constrains required and allowed payload fields per operation.
-Newly acquired portable items use `create_item` with `holder_type: "player"` to
-enter inventory directly; `transfer_item` requires an existing item and a target
-holder. Ordering or receiving an item does not consume it.
-Animals and mounts are tracked as NPCs. The prompts allow plausible first-use
-establishment of a mount without treating its absence from inventory as proof
-it is missing. Dismounting changes mounted state, not the player's map location.
+### Streaming
 
-Repeated `add_exit` proposals are harmless no-ops when the origin already has an
-exit to that destination. Unresolved exits match by case-insensitive description
-within the origin. Existing IDs, descriptions, and traversability are preserved;
-changing traversability requires `set_exit_traversable`.
+`POST /game/turn` accepts `Accept: application/x-ndjson`. Each line has type
+`progress`, `heartbeat`, `complete`, or `error`. Progress carries component/status
+and, where available, request, response, provider, and model details. Terminal
+events contain `status` and `data`. Failures before streaming use HTTP JSON
+errors. Non-streaming JSON clients remain supported.
 
-### LLM diagnostics
+Disable proxy buffering for immediate progress delivery; responses set
+`X-Accel-Buffering: no`.
 
-The game interface always shows a live turn-progress panel with manager reports
-as each finishes, narrator responses/correction errors, summarization, and saving
-status. Intermediate responses may reveal world details and are not committed
-state. Only the final saved response updates the story and inventory.
+### Diagnostics
 
-`POST /game/turn` accepts `Accept: application/x-ndjson` for streaming. Each
-newline-delimited JSON event has type `progress`, `heartbeat`, `complete`, or
-`error`. Progress includes component/status and, on completion, response/provider/model.
-Terminal events contain `status` and `data` (the normal JSON result or error).
-Validation/authentication failures before streaming still use normal HTTP JSON
-errors. Existing JSON clients remain supported. Disable response buffering in
-deployment proxies to receive events immediately; the response sets
-`X-Accel-Buffering: no`. Retrying the same request ID returns the saved result.
+The turn-progress panel shows intermediate component reports and saving status;
+these are debug information, not committed game state. Only the final saved
+response updates story and world displays.
 
-Each structured LLM call logs its start and raw response before parsing or
-validation, with a call ID, component name, provider/model, and elapsed time.
-Provider and validation failures log the exception without changing game state.
-Rejected gameplay operations include their index and payload in the diagnostic
-log. Parallel calls can be matched by their call IDs.
+Structured calls log starts, raw responses, provider/model, call IDs, elapsed
+time, and validation/provider failures. Parallel calls are correlated by ID.
+Diagnostics go to stderr and `logs/llm.log`, rotating at 2 MiB with three backups.
+Raw response previews are limited to 32,768 characters and marked when truncated;
+game-context previews are limited to 4,000 characters.
 
-Diagnostics appear on stderr (the development server console or CGI error
-output) and in `backend/logs/llm.log`. The file rotates at 2 MiB with three
-backups. Raw-response previews are limited to 32,768 characters and explicitly
-marked when truncated; context previews are limited to 4,000 characters.
-These logs contain player input, narrative context, and model output, so treat
-them as private. Provider settings and authentication headers are not logged.
+Logs contain player input, context, and model output: treat them as private.
+Provider settings and authentication headers are not logged.
 
-## CORS
+## Testing
 
-CORS is enabled using Flask-CORS to allow frontend access from any origin.
+Run focused suites from the repository root as needed:
+
+```bash
+python3 -m unittest backend.test_account_backport backend.test_password_reset
+python3 -m unittest backend.test_game_engine backend.test_game_api backend.test_history_preparation
+```
+
+Live movement checks are opt-in and call local Ollama:
+
+```bash
+RUN_LIVE_MOVEMENT_TESTS=1 python3 -m unittest backend.test_movement_live
+```
+
+For cookie, CORS, CSRF, and rate-limit boundaries, see
+[Security Implementation](../SECURITY_IMPLEMENTATION.md).

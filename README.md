@@ -1,50 +1,56 @@
 # AI Dungeon Crawl
 
 A text-based fantasy adventure built with React, Flask, and SQLite. The Dungeon
-Master interprets free-text player actions and proposes narrative/world changes;
-the backend validates and persists the canonical game state.
-
-Modify .env to deploy to different subdirectories or domains (see .env.example)
+Master narrates free-text player actions after the backend reconciles manager
+interpretations against canonical game state.
 
 ## Quick links
-- Backend: backend/app.py
-- DB initialization: backend/init_db.py
-- Deploy script: deploy.sh
-- Config: .env (template: .env.example)
+- [Product scope](docs/PRODUCT_SPEC.md)
+- [Turn architecture](docs/IMPLEMENTATION.md)
+- [Backend API and tests](backend/README.md)
+- [Configuration](CONFIG.md) (template: [.env.example](.env.example))
+- [Security controls and limitations](SECURITY_IMPLEMENTATION.md)
 
 ## Run locally
 
 Create your project `.env` from `.env.example` and set a random `SECRET_KEY`
 before starting the backend. Local Flask startup loads this key automatically;
-the development fallback key has been removed.
+there is no fallback key.
 
-Backend (development)
-
-```bash
-cd backend
-pip3 install -r requirements.txt
-python3 init_db.py
-DEBUG=1 python3 app.py
-```
-
-Service listens on http://127.0.0.1:8000 by default.
-
-Frontend (development)
+Install dependencies and initialize account storage:
 
 ```bash
-cd frontend
-npm install
-npm run dev
+pip3 install -r backend/requirements.txt
+python3 backend/init_db.py
+npm --prefix frontend install
 ```
 
-Dev frontend runs on http://localhost:3000 and proxies API requests to the backend.  `npm run dev` will also start the backend server.
+Then start both servers from the repository root:
+
+```bash
+./dev.sh
+```
+
+The backend listens on http://127.0.0.1:8000 and the frontend on
+http://localhost:3000 (under `DEPLOY_SUB_DIR` when configured), proxying API calls.
+The script stops existing listeners on ports 8000 and 3000 before startup, so
+reserve those ports for this project. It refuses to start if a port remains
+occupied and stops its backend process on exit.
+
+Alternatively, `cd frontend && npm run dev` starts both through npm. For separate
+terminals, run `DEBUG=1 python3 backend/app.py` and
+`cd frontend && NODE_ENV=development npm run generate-config && npm run vite`.
+Do not run multiple startup methods at once.
 
 ## Gameplay API
 
 - `GET /game/` — load or initialize the authenticated user's adventure
 - `POST /game/new` — start a new adventure
 - `POST /game/turn` — process a free-text action (`action`, `game_id`, `request_id`)
+- `POST /game/prepare` — prepare summarized history for the next turn
 - `POST /game/stop` — end the current adventure
+
+See the [backend guide](backend/README.md#gameplay-api) for contracts and streaming.
 
 ## Account pages
 
@@ -63,26 +69,15 @@ Set SMTP values in `.env`; see [the email configuration guide](CONFIG.md#passwor
 Legacy username-only accounts are preserved in the database but cannot log in;
 create new email-based accounts.
 
-## Database
-
-SQLite DB: `backend/database/app.db`.
-To initialize the account database:
-
-```bash
-python3 backend/init_db.py
-```
+The default SQLite database is `backend/database/app.db`. Account-schema
+migrations are additive; initialization is part of the first-time setup above.
 
 ## Deployment
 
 The deployment process is managed by the `deploy.sh` script, which uses `.env` for all environment and path settings.
 
-### Setup
-
-Before deploying, create a `.env` file based on `.env.example`:
-```bash
-cp .env.example .env
-# Edit .env with your deployment settings
-```
+Set the deployment values in your project `.env` as described in
+[Configuration](CONFIG.md#deployment-and-paths).
 
 ### Standard Deploy
 
@@ -90,9 +85,9 @@ cp .env.example .env
 ./deploy.sh
 ```
 - Syncs backend and frontend code to the configured remote directory.
-- Copies the session key, SMTP settings, and reset URL to private server configuration
-  outside the web root, without printing secrets. No `.env` upload is needed;
-  see [backend/README.md](backend/README.md).
+- Copies the session key, SMTP and LLM settings, and reset URL to private server
+  configuration outside the web root, without printing secrets. No `.env`
+  upload is needed; see [private settings](CONFIG.md#private-server-settings).
 - Installs backend Python dependencies in a virtual environment (if not already present).
 - Initializes the backend database **only if** this is the first deploy (i.e., the backend directory did not previously exist).
 - Does **not** overwrite an existing database on redeploys.
@@ -113,10 +108,5 @@ cp .env.example .env
 - The backend virtual environment and dependencies are managed automatically on the server.
 - The frontend is built locally and deployed to the correct subdirectory as configured.
 
-See `deploy.sh` for full details and customization options.
-# Development startup
-
-Run `./dev.sh` to start the backend and frontend. Before starting, it sends
-termination signals to existing TCP listeners on ports 8000 and 3000, so reserve
-those ports for this project's development servers. It refuses to start if a
-port remains occupied and stops its backend process when the script exits.
+See [deploy.sh](deploy.sh) for implementation details and
+[CONFIG.md](CONFIG.md) for configuration and troubleshooting.

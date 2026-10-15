@@ -1,38 +1,43 @@
 Extract movement intent from `current_action`. Return JSON only.
-You receive only the action. World state is deliberately withheld to avoid
-substituting a familiar place for the requested destination.
+You receive only the action, not world state. Classify travel; do not resolve
+destinations or references yourself.
 
-Movement means the player asks to change location. It does NOT require a known
-destination. "Go there" and "follow him" ARE movement even though their targets
-need clarification later. Do not resolve references yourself.
+## Movement boundary
 
-Extract the complete destination phrase, NOT a movement verb or preposition.
-A place explicitly specified by name OR type is `named`: tavern, wilderness,
-forest, North Gate. "Into" by itself is never a destination.
-An explicit place ALWAYS takes priority over a compass direction in the same
-action: for "Head north towards the Great Forest", extract "the Great Forest"
-as named, NOT "north" as directional. Do not discard the destination after
-"towards", "toward", "to", or "into".
+Movement means the player requests travel between locations. An object, a place
+name, or the words "to" or "into" do not by themselves imply travel. Never treat
+a portable item as a destination. When no travel is requested, return
+{"movement":false,"target":null}.
 
-Kinds:
-- named: explicitly specified place or type of place.
-- back: retracing the last journey, without an explicit destination.
-- relative: outside, inside, upstairs, downstairs.
-- directional: compass direction or a route/doorway, without a specified place.
-- exploratory: open-ended exploration, rather than travel to a specified place.
+Travel does not require a known destination: "Go there" and "Follow him" are
+movement even though their targets may need clarification later. Respect
+negation and conditions; do not execute hypothetical journeys. For compound
+actions, extract the requested travel, ignoring other interactions.
+
+## Target
+
+For movement, return `movement: true` and a `target` with `text` and `kind`.
+Extract the complete destination phrase, preserving wording and qualifiers,
+not just a movement verb or preposition. "Into" alone is not a destination.
+
+Choose the kind:
+- named: a specified destination by name or type, such as tavern or wilderness.
+  A destination takes priority over a compass direction: "Head north towards
+  the Great Forest" targets "the Great Forest", not "north".
+- back: retracing the last journey without a specified destination.
+- relative: outside, inside, upstairs, or downstairs.
+- directional: a compass direction or route/doorway without a specified place.
+- exploratory: open-ended travel without a specified destination. A place may
+  describe the area being explored, rather than the destination to reach:
+  "Explore farther into the woods" is exploratory; "Go to the woods" is named.
 - reference: a pronoun or unresolved reference to a place or person.
 
-Examples (action -> complete response):
+## Examples
+
 "Head into the wilderness."
 -> {"movement":true,"target":{"text":"the wilderness","kind":"named"}}
-"Make my way to the tavern."
--> {"movement":true,"target":{"text":"the tavern","kind":"named"}}
 "Head north towards the Great Forest."
 -> {"movement":true,"target":{"text":"the Great Forest","kind":"named"}}
-"Enter North Gate."
--> {"movement":true,"target":{"text":"North Gate","kind":"named"}}
-"Return to the square."
--> {"movement":true,"target":{"text":"the square","kind":"named"}}
 "Retrace my steps."
 -> {"movement":true,"target":{"text":"Retrace my steps","kind":"back"}}
 "Go outside."
@@ -49,11 +54,6 @@ Examples (action -> complete response):
 -> {"movement":false,"target":null}
 "Do not enter the tavern."
 -> {"movement":false,"target":null}
-"Drop the key."
--> {"movement":false,"target":null}
 
-For other wording, apply these meanings, not literal phrase matching.
-Respect negation and conditions; do not execute hypothetical journeys.
-For compound actions, extract the requested movement, not incidental places.
-Preserve destination wording and qualifiers. Never choose a different place,
-invent a destination, produce leave/enter entries, or output IDs or narration.
+Apply these meanings to other wording, not literal phrase matching.
+Never output IDs, narration, or extra fields.

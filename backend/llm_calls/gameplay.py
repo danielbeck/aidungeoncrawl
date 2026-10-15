@@ -1,9 +1,13 @@
 """Structured LLM calls used by the gameplay turn processor."""
+import logging
+
 try:
     from backend.llm_calls.base import LLMCall, LLMResponseError
 except ImportError:
     from llm_calls.base import LLMCall, LLMResponseError
 
+
+logger = logging.getLogger(__name__)
 
 MANAGER_INTERACTIONS = {
     'inventory': ('items', ('take', 'drop')),
@@ -66,7 +70,8 @@ class MapManagerCall(LLMCall):
         target = data['target']
         if not data['movement']:
             if target is not None:
-                raise LLMResponseError('map_manager: no movement requires a null target.', details=data)
+                logger.warning('map_manager: discarded non-null target because movement is false.')
+                return {**data, 'target': None}
         elif (not isinstance(target, dict) or set(target) != {'kind', 'text'}
               or target['kind'] not in (
                   'named', 'back', 'relative', 'directional', 'exploratory', 'reference')

@@ -18,5 +18,5 @@ This overview is historical background; deterministic game state remains
 authoritative for the current situation.
 
 Return only a JSON object containing `summary`, a non-empty string of at most
-1500 characters. Aim for a concise paragraph, roughly 100-200 words, and use
-less when little has happened. Do not include IDs or additional fields.
+1500 characters. Use a concise paragraph and less when little has happened.
+Do not include IDs or additional fields.

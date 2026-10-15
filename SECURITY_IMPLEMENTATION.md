@@ -1,151 +1,48 @@
-# Security Implementation Guide
+# Security Implementation and Limitations
 
-## Overview
-This document details all security fixes that have been implemented in this codebase.
+This describes current controls and configuration boundaries, not a security
+audit or a guarantee of protection. Setup belongs in [CONFIG.md](CONFIG.md);
+account API behavior belongs in [backend/README.md](backend/README.md#account-api).
 
-## ✅ Implemented Security Features
+## Credentials and sessions
 
-### 1. Rate Limiting
-**Status:** ✅ Implemented
+- A non-empty `SECRET_KEY` is required in every environment, without a hardcoded
+  fallback. Keep `.env` private and out of version control.
+- Deployment stores session, SMTP, and LLM credentials outside the web root.
+  See [private server settings](CONFIG.md#private-server-settings).
+- Passwords are hashed with Werkzeug. Registration requires an email address
+  and an 8-128-character password with uppercase, lowercase, and a number.
+- Login and registration create permanent sessions with a 24-hour lifetime.
+  Cookies are `HttpOnly` and `SameSite=Lax`; `Secure` is enabled when the loaded
+  settings specify `FLASK_ENV=production`.
+- Password recovery uses hashed, single-use, 256-bit random tokens expiring after
+  15 minutes. SQLite enforces a per-account resend cooldown across CGI processes.
+  Successful resets revoke existing sessions. SMTP uses verified TLS.
 
-**Changes:**
-- Added `Flask-Limiter` package to requirements.txt
-- Configured global rate limits: 200 requests/day, 50 requests/hour
-- Authentication endpoints have rate limit checks built-in
-- Returns HTTP 429 (Too Many Requests) when limits exceeded
+Legacy username-only accounts remain stored but cannot authenticate; users need
+new email-based accounts. Account schema migrations are additive.
 
-**Configuration:**
-```python
-limiter = Limiter(
-    app=app,
-    key_func=get_remote_address,
-    default_limits=["200 per day", "50 per hour"],
-    storage_uri="memory://"
-)
-```
+## Request controls
 
-**Note:** In production, consider using Redis for distributed rate limiting:
-```python
-storage_uri="redis://localhost:6379"
-```
+| Control | Current behavior and boundary |
+|---|---|
+| Authentication and ownership | Gameplay requires a session and loads the authenticated user's saved game. |
+| SQL parameters | Account and gameplay queries use parameterized values. |
+| Input validation | Account fields and gameplay/LLM contracts are validated before use. |
+| Request size | Flask's request-body limit is 16 KiB. |
+| Rate limiting | Flask-Limiter applies IP-based defaults of 200/day and 50/hour with in-memory storage. |
+| CORS | Credentialed requests are restricted to configured origins, with localhost development defaults; see [runtime settings](CONFIG.md#other-runtime-settings). |
+| CSRF configuration | Flask-WTF is initialized, but `WTF_CSRF_CHECK_DEFAULT=False` disables automatic checks. Current endpoint modules do not explicitly invoke CSRF protection; do not describe CSRF enforcement as implemented. |
 
----
+In-memory rate limits are process-local, not durable or shared between workers
+or CGI requests. A shared backend such as Redis requires an explicit application
+configuration change. CORS and `SameSite` cookies do not replace CSRF validation.
 
-### 2. CSRF Protection
-**Status:** ✅ Implemented
+## Response headers
 
-**Changes:**
-- Added `Flask-WTF` package to requirements.txt
-- Initialized CSRFProtect middleware
-- Configured CSRF settings for session-based tokens
+Flask adds these API response headers:
 
-**Configuration:**
-```python
-csrf = CSRFProtect(app)
-app.config['WTF_CSRF_TIME_LIMIT'] = None  # Session-based
-app.config['WTF_CSRF_CHECK_DEFAULT'] = False  # Manual protection
-```
-
-**Usage:** CSRF protection is enabled by default. To exempt specific endpoints (like public APIs), use:
-```python
-@csrf.exempt
-@bp.route('/public-endpoint')
-def public_endpoint():
-    pass
-```
-
----
-
-### 3. Secure Session Cookies
-**Status:** ✅ Implemented
-
-**Changes:**
-- Configured secure cookie settings
-- Added session timeout (24 hours)
-- Made sessions permanent with proper lifetime
-
-**Configuration:**
-```python
-app.config['SESSION_COOKIE_SECURE'] = True  # HTTPS only (production)
-app.config['SESSION_COOKIE_HTTPONLY'] = True  # No JavaScript access
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
-```
-
-**Note:** `SESSION_COOKIE_SECURE` is automatically set based on `FLASK_ENV` environment variable.
-
----
-
-### 4. Input Validation & Length Limits
-**Status:** ✅ Implemented
-
-**Changes:**
-
-#### Email Validation
-- Required email-format address, maximum 254 characters
-- Whitespace trimmed and addresses normalized to lowercase
-- Case-insensitive uniqueness and lookup
-
-#### Password Validation
-- Minimum length: 8 characters
-- Maximum length: 128 characters
-- Must contain:
-  - At least one uppercase letter
-  - At least one lowercase letter
-  - At least one number
-
-#### Item Name/Description Validation
-- Name: max 255 characters (required, non-empty)
-- Description: max 1000 characters
-
-**Code Example:**
-```python
-from backend.endpoints.auth import validate_email
-
-valid, error = validate_email('person@example.com')
-```
-
-Password recovery uses 256-bit random, single-use tokens stored only as hashes,
-with expiry enforced at 15 minutes. Issuance is serialized and throttled per
-account in SQLite, including CGI deployments. Resetting a password increments
-the account's session version, revoking previously issued sessions. SMTP uses
-verified STARTTLS or implicit TLS. See [the account API guide](backend/README.md#api-examples).
-
----
-
-### 5. Production CORS Configuration
-**Status:** ✅ Implemented
-
-**Changes:**
-- CORS origins now read from `ALLOWED_ORIGINS` environment variable
-- Falls back to localhost origins for development
-- Supports multiple production domains
-
-**Environment Variable:**
-```bash
-# .env file
-ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
-```
-
-**Code:**
-```python
-ALLOWED_ORIGINS = os.environ.get('ALLOWED_ORIGINS', '').split(',') if os.environ.get('ALLOWED_ORIGINS') else [
-    "http://localhost:3000",
-    "http://localhost:3001",
-    # ... dev origins
-]
-```
-
----
-
-### 6. Security Headers
-**Status:** ✅ Implemented
-
-**Changes:**
-- Added security headers middleware to all responses
-
-**Headers Added:**
-```
+```text
 X-Content-Type-Options: nosniff
 X-Frame-Options: DENY
 X-XSS-Protection: 1; mode=block
@@ -153,201 +50,47 @@ Strict-Transport-Security: max-age=31536000; includeSubDomains
 Content-Security-Policy: default-src 'none'; frame-ancestors 'none'
 ```
 
-**Implementation:**
-```python
-@app.after_request
-def set_security_headers(response):
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'DENY'
-    # ... other headers
-    return response
-```
+The CSP is for API responses, not a frontend document policy. The legacy
+`X-XSS-Protection` header is not a substitute for output safety or CSP.
+HSTS only has an effect when received over HTTPS.
 
----
+## Errors, state integrity, and logs
 
-### 7. Request Size Limiting
-**Status:** ✅ Implemented
+Flask has JSON handlers for common HTTP failures and uncaught exceptions.
+Endpoint errors can also return a single `error` message; not all responses use
+the handlers' `error`/`message` shape.
 
-**Changes:**
-- Maximum request size: 16KB
-- Prevents DoS attacks via large payloads
+Unhandled-error detail is controlled by the process `FLASK_ENV`, while cookie
+settings use loaded settings. Deployment writes `FLASK_ENV` into private JSON;
+the CGI entry point does not export that value into the process environment.
+Do not assume that the production cookie setting also enables generic unhandled
+errors; configure the process environment separately where required.
 
-**Configuration:**
-```python
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024  # 16KB
-```
+Gameplay validates changes on a candidate state and commits atomically, with
+version checks and request-ID deduplication. Invalid responses and processing
+failures leave saved gameplay unchanged.
 
----
+Application errors are logged in `backend/logs/flask_error.log`; LLM diagnostics
+are also written to a rotating `backend/logs/llm.log`. These can contain player
+actions, narrative context, and model output. Keep logs and databases private.
+Logging exists, but this is not a dedicated, comprehensive security audit trail.
 
-### 8. Session Timeout
-**Status:** ✅ Implemented
+## Operational checklist
 
-**Changes:**
-- Configured 24-hour session lifetime
-- Sessions made permanent with proper timeout
-- Automatic cleanup of expired sessions
+- Use HTTPS, a stable random session key, and private configuration permissions.
+- Set any required CORS process environment explicitly.
+- Do not assume automatic CSRF validation or cross-process rate limiting exists.
+- Restrict access to backend data, logs, private settings, and provider keys.
+- Keep dependencies updated and review deployment-specific behavior.
+- For regression tests, see the [backend guide](backend/README.md#testing).
 
-**Configuration:**
-```python
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
-session.permanent = True  # Applied on login/register
-```
+Two-factor authentication, email verification, dedicated failed-login account
+lockout, and a frontend CSP are not provided by the controls described above.
 
----
+## Change history
 
-### 9. Comprehensive Error Handling
-**Status:** ✅ Implemented
-
-**Changes:**
-- Added specific error handlers for common HTTP errors (400, 401, 403, 404, 405, 413, 429, 500)
-- Environment-aware error messages (detailed in dev, generic in production)
-- Proper logging of all errors with IP addresses and stack traces
-- Database connection cleanup in error scenarios
-- JSON parsing error handling
-- Validation error responses with specific messages
-
-**Error Handlers:**
-```python
-@app.errorhandler(400)  # Bad Request
-@app.errorhandler(401)  # Unauthorized
-@app.errorhandler(403)  # Forbidden
-@app.errorhandler(404)  # Not Found
-@app.errorhandler(405)  # Method Not Allowed
-@app.errorhandler(413)  # Request Too Large
-@app.errorhandler(429)  # Rate Limit Exceeded
-@app.errorhandler(500)  # Internal Server Error
-@app.errorhandler(Exception)  # Catch-all
-```
-
-**Error Response Format:**
-```json
-{
-  "error": "Error Type",
-  "message": "Descriptive error message"
-}
-```
-
-**Security Features:**
-- Failed login attempts logged with IP addresses
-- Database errors caught and logged without exposing internals
-- Rate limit violations logged
-- Production mode hides sensitive error details
-
----
-
-## 📋 Configuration Checklist
-
-### Development Setup
-1. ✅ Install new dependencies: `pip install -r requirements.txt`
-2. ✅ Update `.env` file (use `.env.example` as template)
-3. ✅ Test authentication endpoints
-4. ✅ Verify rate limiting works
-
-### Production Deployment
-1. ⚠️ Set `FLASK_ENV=production` in environment
-2. ⚠️ Set `SECRET_KEY` to a secure random value
-3. ⚠️ Configure `ALLOWED_ORIGINS` with production domains
-4. ⚠️ Use HTTPS (required for secure cookies)
-5. ⚠️ Consider Redis for rate limiting storage
-6. ⚠️ Monitor rate limit logs
-7. ⚠️ Set up proper logging infrastructure
-
-### Example Production `.env`:
-```bash
-SECRET_KEY=your-64-character-secret-key-here
-FLASK_ENV=production
-ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
-```
-
----
-
-## 🔒 Additional Security Recommendations
-
-### Implemented ✅
-- [x] SQL injection protection (parameterized queries)
-- [x] Password hashing (Werkzeug security)
-- [x] Session-based authentication
-- [x] Authorization checks (user_id validation)
-- [x] Rate limiting
-- [x] CSRF protection
-- [x] Secure session cookies
-- [x] Input validation
-- [x] Security headers
-- [x] Request size limiting
-- [x] Session timeout (24 hours)
-- [x] Comprehensive error handling with logging
-- [x] Email password reset with single-use, 15-minute links and session revocation
-
-### Not Yet Implemented ⚠️
-- [ ] Two-Factor Authentication (2FA)
-- [ ] Email verification
-- [ ] Account lockout after failed attempts
-- [ ] Audit logging for security events
-- [ ] IP-based blocking/whitelisting
-- [ ] Content Security Policy for frontend
-- [ ] Subresource Integrity (SRI) for CDN resources
-- [ ] Regular security dependency updates
-- [ ] Automated security scanning
-
----
-
-## 🧪 Testing Security Features
-
-### Test Rate Limiting
-```bash
-# Send multiple requests quickly
-for i in {1..15}; do
-  curl -X POST http://localhost:8000/auth/login \
-    -H "Content-Type: application/json" \
-    -d '{"email":"test@example.com","password":"test"}'
-done
-```
-
-### Test Input Validation
-```bash
-# Test weak password
-curl -X POST http://localhost:8000/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"email":"testuser@example.com","password":"weak"}'
-
-# Test invalid email
-curl -X POST http://localhost:8000/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"email":"not-an-email","password":"ValidPass123"}'
-```
-
-### Test Security Headers
-```bash
-curl -I http://localhost:8000/
-# Check for X-Content-Type-Options, X-Frame-Options, etc.
-```
-
----
-
-## 📚 References
-
-- [OWASP Top 10](https://owasp.org/www-project-top-ten/)
-- [Flask Security Best Practices](https://flask.palletsprojects.com/en/2.3.x/security/)
-- [Flask-Limiter Documentation](https://flask-limiter.readthedocs.io/)
-- [Flask-WTF CSRF Documentation](https://flask-wtf.readthedocs.io/en/stable/csrf.html)
-
----
-
-## 📝 Changelog
-
-### 2026-10-07
-- Replaced username-based login and registration with email addresses.
-- Added SMTP password recovery with single-use links expiring after 15 minutes.
-- Added password confirmation, persistent resend cooldown, and session revocation.
-
-### 2026-02-07
-- ✅ Added Flask-Limiter for rate limiting
-- ✅ Added Flask-WTF for CSRF protection
-- ✅ Configured secure session cookies
-- ✅ Implemented input validation with regex patterns
-- ✅ Added password strength requirements
-- ✅ Configured production CORS from environment
-- ✅ Added security headers middleware
-- ✅ Added request size limiting
-- ✅ Updated requirements.txt
-- ✅ Updated .env.example with ALLOWED_ORIGINS
+- **2026-10-07:** Email-based accounts, SMTP recovery, resend cooldown, password
+  confirmation, and session revocation.
+- **2026-02-07:** Rate-limiter and Flask-WTF setup, cookie settings, input checks,
+  configurable CORS, API headers, and request-size limits. Flask-WTF setup alone
+  did not enable endpoint CSRF enforcement.

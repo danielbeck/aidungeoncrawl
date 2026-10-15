@@ -3,7 +3,7 @@
   "properties": {
     "movement": {
       "type": "boolean",
-      "description": "True for requests to travel, enter, leave, return, explore, or follow someone, even if the destination is unresolved. False for observations, negated or hypothetical movement."
+      "description": "True only for requested player travel between locations, including unresolved destinations. False for observations, item interactions without travel, and negated or hypothetical movement. A portable item is not a destination."
     },
     "target": {
       "anyOf": [
@@ -19,7 +19,7 @@
             },
             "kind": {
               "type": "string",
-              "description": "A specified place takes priority: 'north towards the Great Forest' is named, NOT directional. named also includes place types (wilderness, tavern). reference: there/him; relative: outside; back: retracing; directional: direction or route WITHOUT a specified place; exploratory: open-ended exploration.",
+              "description": "named: specified destination by name or type, taking priority over a direction. back: retracing; relative: outside/inside; directional: direction or route without a destination; exploratory: open-ended travel, possibly within a named area rather than to a specified destination; reference: there/him.",
               "enum": ["named", "back", "relative", "directional", "exploratory", "reference"]
             }
           },
@@ -30,6 +30,20 @@
       "description": "Null only when movement is false."
     }
   },
+  "oneOf": [
+    {
+      "properties": {
+        "movement": {"const": false},
+        "target": {"type": "null"}
+      }
+    },
+    {
+      "properties": {
+        "movement": {"const": true},
+        "target": {"type": "object"}
+      }
+    }
+  ],
   "required": ["movement", "target"],
   "additionalProperties": false
 }

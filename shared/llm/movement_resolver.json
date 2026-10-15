@@ -2,7 +2,7 @@
   "type": "object",
   "properties": {
     "destination": {
-      "description": "The actual destination satisfying the intent, or null when a reference is unresolved or a route is blocked. Never invent a referent for him/there. Missing exits alone do not block discovery of a new place.",
+      "description": "The resolved destination satisfying the intent, with clarification null. If the referent or route cannot be established, or the route is blocked, return destination null and a target-specific clarification instead. Do not merely repeat an unresolved target as a location name. Missing exits alone do not block discovery of a new place.",
       "anyOf": [
         {"type": "null"},
         {
@@ -21,7 +21,7 @@
         {"type": "null"},
         {"type": "string", "minLength": 1, "maxLength": 1000}
       ],
-      "description": "Required when destination is null; otherwise null."
+      "description": "A target-specific question or explanation when destination is null. Must be null when destination is an object. Do not ask whom to follow unless following is actually the requested intent."
     }
   },
   "required": ["destination", "clarification"],

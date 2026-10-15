@@ -17,6 +17,9 @@ at build time:
 import narratorSchema from '@shared/llm/game_narrator.json'
 ```
 
-Backend edits take effect on restart; schema changes need a frontend rebuild.
+The backend caches definitions per call class for the life of the process.
+Prompt/schema edits therefore require a backend process reload to take effect;
+new CGI processes read the current definitions. If a schema is imported by the
+frontend, its bundled copy requires a frontend rebuild.
 `deploy.sh` copies this folder to the server, and `.htaccess` blocks web access
 to it.

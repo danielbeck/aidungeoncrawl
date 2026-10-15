@@ -1,234 +1,140 @@
 # Configuration Guide
 
-This boilerplate uses `.env` file to manage deployment settings, allowing you to deploy multiple apps to the same server with different subdirectories.
+The project-root `.env` is the configuration source for local development,
+frontend path generation, and deployment. Do not commit it.
 
-## Configuration File
+## Setup
 
-The `.env` file in the root directory controls:
-- Deployment server and credentials
-- Base directory and subdirectory paths
-- Production domain
-- Flask secret key and other environment variables
-
-### Setup
-
-Copy the example file to create your configuration:
 ```bash
 cp .env.example .env
 ```
 
-Then edit `.env` with your settings.
+Replace the example values, especially `SECRET_KEY`, with your own settings.
+The backend requires a non-empty key in every environment; there is no
+development fallback. Keep the key stable to preserve sessions.
 
-### Default Configuration
+## Deployment and paths
+
+| Variable | Purpose |
+|---|---|
+| `DEPLOY_HOST` | SSH/rsync server hostname. |
+| `DEPLOY_USER` | SSH username. |
+| `DEPLOY_BASE_DIR` | Remote deployment base directory, such as `apps/`. |
+| `DEPLOY_SUB_DIR` | Optional app subdirectory, such as `game1/`; empty deploys directly to the base directory. |
+| `DEPLOY_BACKEND_ROOT` | Absolute server document-root path used to construct backend paths. |
+| `PRODUCTION_DOMAIN` | Public origin, such as `https://example.com`. |
+
+For separate apps, use separate project configurations and subdirectories:
 
 ```env
-# Flask Configuration
-SECRET_KEY=your-secret-key-here
-
-# Deployment Configuration
-DEPLOY_HOST=your.host.com
-DEPLOY_USER=your_username
-DEPLOY_BASE_DIR=nb/
-DEPLOY_SUB_DIR=
-DEPLOY_BACKEND_ROOT=/kunden/homepages/29/d557350892/htdocs/
-PRODUCTION_DOMAIN=https://yourdomain.com
+DEPLOY_BASE_DIR=apps/
+DEPLOY_SUB_DIR=game1/
+PRODUCTION_DOMAIN=https://example.com
 ```
 
-### Configuration Options
+This deploys under `apps/game1/`, with the frontend at
+`https://example.com/game1/` and API at
+`https://example.com/game1/backend/api.cgi`.
+Use lowercase, hyphenated subdirectory names and trailing slashes for directory
+settings. Set `DEPLOY_SUB_DIR=` for a root deployment.
 
-#### DEPLOY_HOST
-The server hostname for SSH/rsync deployment.
+### How paths are generated
 
-#### DEPLOY_USER
-The SSH username for server access.
+- `deploy.sh` reads `.env` and constructs remote paths.
+- `frontend/generate-config.js` generates `frontend/src/config.js` and Apache
+  rewrite configuration. The generated frontend config contains public paths,
+  not SMTP or provider credentials.
+- `frontend/vite.config.js` reads `DEPLOY_SUB_DIR` from `.env` for asset paths
+  and the development proxy.
+- Development uses `/<subdirectory>/api` proxied to Flask on port 8000;
+  production uses `/<subdirectory>/backend/api.cgi`.
+- `api.cgi` locates its adjacent virtualenv and `cgi_app.py` using Apache's
+  script path, without deploy-time path substitution.
 
-#### DEPLOY_BASE_DIR
-The base directory on your server where apps are deployed (e.g., `nb/`).
-- Must end with `/`
-- This is the root directory that contains all your apps
+`npm run dev` generates development paths. `npm run build` generates production
+paths before building. After changing path settings, restart the development
+server or rebuild and redeploy for production.
 
-#### DEPLOY_SUB_DIR (optional)
-A subdirectory within baseDir for this specific app.
-- Leave empty to deploy directly to baseDir
-- Add a subdirectory (e.g., `myapp/`) to deploy to `baseDir/subDir`
-- Must end with `/` if specified
+### Private server settings
 
-#### PRODUCTION_DOMAIN
-The full production domain URL (e.g., `https://yourdomain.com`).
+Deployment transfers `SECRET_KEY`, SMTP settings, LLM settings, the reset URL,
+and the cookie-environment setting over SSH to
+`~/.config/react-python-sqlite-boilerplate/session.json`, outside the web root.
+Its directory has permissions 700 and the file 600; `.env` is not uploaded.
+CGI reads this file on each request through `APP_SECRET_FILE`. For multiple apps,
+configure distinct private paths in each app's deployment script and CGI entry
+point.
 
-### Password Recovery Email
+Local backend settings load from `.env`, with process environment values taking
+precedence. When `APP_SECRET_FILE` is set, the private JSON file is used instead.
+Deployment sets `FLASK_ENV=production` for HTTPS domains, enabling secure-only
+cookies; HTTP domains use `development` so cookies still work. HTTPS is strongly
+recommended: a session key does not encrypt traffic.
 
-Set these values in the project-root `.env` (never commit real credentials):
+## Password recovery email
 
 ```env
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_SECURE=false
-SMTP_FROM_EMAIL=accounts@yourdomain.com
-SMTP_FROM_NAME="Your App"
-SMTP_USERNAME=accounts@yourdomain.com
+SMTP_FROM_EMAIL=accounts@example.com
+SMTP_FROM_NAME="AI Dungeon Crawl"
+SMTP_USERNAME=accounts@example.com
 SMTP_PASSWORD="your-smtp-password"
 ```
 
-`SMTP_SECURE=false` uses STARTTLS (typically port 587), not unencrypted SMTP.
-`SMTP_SECURE=true` uses implicit TLS (typically port 465). Certificate verification
-is enabled in both modes. The SMTP provider must authorize the sender address.
+`SMTP_SECURE=false` uses verified STARTTLS, typically on port 587.
+`SMTP_SECURE=true` uses verified implicit TLS, typically on port 465. The
+provider must authorize the sender address.
 
 `PASSWORD_RESET_URL` optionally overrides the complete frontend reset-page URL,
-including any subdirectory, with no query or fragment. Local development defaults
-to `http://localhost:3000/<DEPLOY_SUB_DIR>/reset-password`; deployment defaults to
-`<PRODUCTION_DOMAIN>/<DEPLOY_SUB_DIR>/reset-password`, matching whatever scheme
-`PRODUCTION_DOMAIN` uses (HTTPS is strongly recommended but not required). If Vite
-uses a different port, set a local override. Remove or update that override before
-deployment, since an explicit override is also deployed.
+including any subdirectory, without a query or fragment:
+- Local default: `http://localhost:3000/<DEPLOY_SUB_DIR>/reset-password`.
+- Deployment default: `<PRODUCTION_DOMAIN>/<DEPLOY_SUB_DIR>/reset-password`.
 
-Local startup reads these settings from `.env`, with process environment values
-taking precedence. Deployment copies only the session key, SMTP settings, reset
-URL, and production cookie setting to the private server configuration outside
-the web root; SMTP credentials are never added to the frontend build. Redeploy
-after changing SMTP settings. Links expire after 15 minutes and may be used once.
-The backend enforces matching passwords with 8-128 characters, uppercase,
-lowercase, and a number, then invalidates existing sessions after a reset.
+Set a local override if Vite uses another port. Remove or update it before
+deployment, since explicit overrides are also deployed. Redeploy after changing
+SMTP settings. For link expiry, password rules, and account behavior, see the
+[account API guide](backend/README.md#account-api).
 
-Email recovery requires a registered email account. Existing username-only rows
-are preserved but are no longer login identities; register new email accounts.
+## LLM settings
 
-## Deployment Scenarios
+| Variable | Purpose |
+|---|---|
+| `LLM_PROVIDER` | `ollama` or `openrouter`; defaults to Ollama locally and OpenRouter in production. |
+| `OLLAMA_URL`, `OLLAMA_MODEL` | Local provider endpoint and model. |
+| `OPENROUTER_URL`, `OPENROUTER_MODEL` | OpenRouter endpoint and model. |
+| `OPENROUTER_API_KEY` | Private OpenRouter credential. |
 
-### Scenario 1: Single App (Direct to Base)
+See `.env.example` for defaults. Prompts and response schemas live in
+`shared/llm/`; see [shared definitions](shared/README.md).
 
-Deploy directly to `nb/`:
+## Other runtime settings
 
-```json
-{
-  "deployment": {
-    "baseDir": "nb/",
-    "subDir": ""
-  }
-}
-```
-
-Result:
-- Files deployed to: `nb/backend/`, `nb/frontend/`, `nb/index.html`, etc.
-- Accessible at: `https://nosebeep.com/`
-- API endpoint: `https://nosebeep.com/backend/api.cgi/`
-
-### Scenario 2: Multiple Apps (Subdirectories)
-
-**App 1** (`config.json`):
-```json
-{
-  "deployment": {
-    "baseDir": "nb/",
-    "subDir": "game1/"
-  }
-}
-```
-
-Result:
-- Files deployed to: `nb/game1/backend/`, `nb/game1/frontend/`, etc.
-- Accessible at: `https://nosebeep.com/game1/`
-- API endpoint: `https://nosebeep.com/game1/backend/api.cgi/`
-
-**App 2** (separate project with different `config.json`):
-```json
-{
-  "deployment": {
-    "baseDir": "nb/",
-    "subDir": "game2/"
-  }
-}
-```
-
-Result:
-- Files deployed to: `nb/game2/backend/`, `nb/game2/frontend/`, etc.
-- Accessible at: `https://nosebeep.com/game2/`
-- API endpoint: `https://nosebeep.com/game2/backend/api.cgi/`
-
-## How It Works
-
-### Backend Configuration
-
-1. **deploy.sh**: Reads `config.json` and constructs the deployment path
-2. **api.cgi**: A shell launcher resolves Apache's script path and invokes the adjacent virtualenv Python and `cgi_app.py`. No deploy-time path substitution or `config.json` is required. Deployment transfers `SECRET_KEY`, SMTP settings, and the reset URL from `.env` into `~/.config/react-python-sqlite-boilerplate/session.json` (permissions 600, outside the web root), setting `FLASK_ENV=production` (and therefore secure-only cookies) only when `PRODUCTION_DOMAIN` uses HTTPS; CGI loads it on every request. Local startup reads the project `.env`, with process environment values taking precedence. Missing keys stop startup; there is no hardcoded fallback. Keep the key stable across deployments to preserve sessions. For multiple deployed apps, configure a separate private path in each app's deployment script and CGI entry point.
-3. **config_helper.py**: A local helper that can parse `config.json` when running locally; not required on the server when using deploy-time templating.
-
-### Frontend Configuration
-
-1. **generate-config.js**: Reads `config.json` and generates `frontend/src/config.js`
-2. **vite.config.js**: Reads `config.json` to set the base URL for asset paths
-3. **api.js**: Imports generated config to construct correct API URLs
-4. **npm run build**: Automatically runs `generate-config.js` before building
-
-## Usage
-
-### Initial Setup
-
-1. Copy this boilerplate to a new directory for each app
-2. Edit `config.json` with your deployment settings
-3. Set `subDir` to a unique value for each app
-
-### Development
-
-No configuration changes needed - development always uses local proxies.
-
-```bash
-cd frontend
-npm run dev
-```
-
-### Building for Production
-
-The build process automatically generates the correct configuration:
-
-```bash
-cd frontend
-npm run build
-```
-
-Or manually generate the config:
-
-```bash
-cd frontend
-npm run generate-config
-```
-
-### Deployment
-
-Simply run the deployment script:
-
-```bash
-./deploy.sh
-```
-
-The script reads `config.json` and deploys to the configured location.
+- `DEBUG=1` enables Flask's local debug mode.
+- `DB_PATH` optionally overrides the backend SQLite path.
+- `ALLOWED_ORIGINS` is a comma-separated list read from the backend process
+  environment; without it, Flask allows localhost ports 3000-3005.
+  Unlike the settings transferred above, deployment does not copy this variable
+  into the private JSON file, and the CORS initialization does not read it from
+  `.env`. Export it in the backend environment if needed. CORS is not an
+  authentication or CSRF mechanism.
 
 ## Troubleshooting
 
-### Config Not Found
+- **Missing `.env`:** deployment stops; frontend tools warn and use default paths,
+  while backend startup still requires a session key from its supported sources.
+- **Wrong assets or API 404s:** check `DEPLOY_SUB_DIR`, rebuild and redeploy, and
+  verify that `backend/api.cgi`, its virtualenv, and Apache rewrite rules are
+  present at the generated paths.
+- **Sessions fail in production:** verify the private configuration is readable,
+  the key is stable, and secure-cookie settings match the site's HTTP/HTTPS scheme.
+- **Reset links point to the wrong host:** check for a stale
+  `PASSWORD_RESET_URL` override and redeploy.
 
-If `config.json` is missing:
-- **deploy.sh**: Will exit with an error
-- **api.cgi**: Resolves its adjacent virtualenv and Python entry point using Apache's script path.
-- **Frontend build**: Uses default base path `/`
+## Legacy configuration helper
 
-### Wrong Paths After Deployment
-
-1. Verify `config.json` has correct `baseDir` and `subDir`
-2. Rebuild the frontend: `cd frontend && npm run build`
-3. Redeploy: `./deploy.sh`
-
-### API Not Found (404)
-
-Check that:
-1. `subDir` in `config.json` matches your deployment
-2. Frontend was built after updating `config.json`
-3. Backend `api.cgi` and `config_helper.py` were deployed together
-
-## Best Practices
-
-1. **Keep config.json in version control** - But consider using environment-specific configs
-2. **Use consistent subdirectory naming** - Use lowercase, hyphens, and trailing slashes
-3. **Test locally first** - Always test with `npm run dev` before deploying
-4. **Rebuild after config changes** - Always rebuild frontend after changing `config.json`
-5. **One config per app** - Each app should have its own `config.json` with unique `subDir`
+`backend/config_helper.py` can still read deployment environment variables or
+fall back to `config.json`. This is a legacy helper, not the configuration source
+for the current deployment script or frontend tools. New setups should use
+`.env`, not create or commit `config.json`.

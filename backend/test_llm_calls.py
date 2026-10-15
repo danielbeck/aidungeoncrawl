@@ -215,13 +215,29 @@ class GameplayManagerResponseTests(unittest.TestCase):
         for data in (
                 {'locations': []}, {'movement': 'true', 'target': None},
                 {'movement': True, 'target': None},
-                {'movement': False, 'target': {'kind': 'named', 'text': 'Tavern'}},
                 {'movement': True, 'target': {'kind': 'unknown', 'text': 'Tavern'}},
                 {'movement': True, 'target': {'kind': 'named', 'text': ' '}},
                 {'movement': True, 'target': {'kind': 'named', 'text': 'x' * 2001}},
                 {'movement': True, 'target': {'kind': 'named', 'text': 'Tavern', 'id': 1}}):
             with self.subTest(data=data), self.assertRaises(LLMResponseError):
                 MapManagerCall.validate_response(data)
+
+    def test_no_movement_discards_target_with_warning_without_mutating_input(self):
+        for target in ({'kind': 'named', 'text': 'Tavern'}, {}, 'Tavern', [], 42):
+            data = {'movement': False, 'target': target}
+            with self.subTest(target=target), self.assertLogs(
+                    'backend.llm_calls.gameplay', level='WARNING') as logs:
+                result = MapManagerCall.validate_response(data)
+            self.assertEqual(result, {'movement': False, 'target': None})
+            self.assertIs(data['target'], target)
+            self.assertIn('discarded non-null target', logs.output[0])
+
+    def test_map_call_normalizes_data_but_retains_raw_response(self):
+        raw = '{"movement":false,"target":{"kind":"named","text":"Tavern"}}'
+        with self.assertLogs('backend.llm_calls.gameplay', level='WARNING'):
+            result = MapManagerCall(transport=FakeTransport(raw)).run('Wait.')
+        self.assertEqual(result.data, {'movement': False, 'target': None})
+        self.assertEqual(result.raw, raw)
 
     def test_movement_resolution_contract(self):
         for data in (
