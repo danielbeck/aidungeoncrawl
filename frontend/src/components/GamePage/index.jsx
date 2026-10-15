@@ -125,19 +125,6 @@ function GamePage() {
     }
   }
 
-  const stopGame = async () => {
-    setSubmitting(true)
-    setError('')
-    try {
-      const data = await fetchAPI('/game/stop', { method: 'POST', credentials: 'include' })
-      setGame(data.game)
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
   if (loading) return <p className={styles.status} role="status">Loading your adventure...</p>
   if (!game) return <section className={styles.game}><p className={styles.error} role="alert">{error}</p><button onClick={loadGame}>Try again</button></section>
 
@@ -163,8 +150,8 @@ function GamePage() {
               </li>
             ))}
           </ol>
-          {progress.length > 0 && <section className={styles.progress} aria-label="Turn progress">
-            <h3>Turn progress</h3>
+          {progress.length > 0 && <details className={styles.progress} aria-label="Turn progress">
+            <summary>Turn progress</summary>
             <p>Intermediate responses are debug information, not committed game state.</p>
             <ol role="log" aria-live="polite" aria-relevant="additions text">
               {progress.map((event, index) => (
@@ -202,7 +189,7 @@ function GamePage() {
                 </li>
               ))}
             </ol>
-          </section>}
+          </details>}
           {error && <p className={styles.error} role="alert">{error}</p>}
           {game.status === 'active' ? <>
             <form className={styles.actionForm} onSubmit={submitAction}>
@@ -223,9 +210,6 @@ function GamePage() {
                 {submitting ? 'The world responds...' : 'Take action'}
               </button>
             </form>
-            <button className={styles.stopButton} type="button" onClick={stopGame} disabled={submitting}>
-              End this adventure
-            </button>
           </> : <div className={styles.ended} role="status">
             <h3>{game.endReason === 'character_died' ? 'Your character has died.' : 'Adventure ended.'}</h3>
             <p>Start a new game when you are ready to return to the story.</p>

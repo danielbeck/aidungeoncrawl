@@ -219,7 +219,9 @@ configured provider/settings as other gameplay calls. Its response contains only
 roughly 100-200 words or fewer when little has happened. Summarizer started,
 completed, and failed progress events expose its input, output, and errors in
 the UI. Post-turn preparation uses a separate HTTP request, compatible with CGI
-without depending on a worker surviving the original request. Its JSON response
+without depending on a worker surviving the original request. Successful preparation
+responses include the summarized history in `summary` (including cached results)
+and the covered `summaryEventCount`. Its JSON response
 and failure are collapsed in debug progress; late UI updates are ignored after
 the next action or restart. Tests verify full-history submission, literal-history
 retention, nonblocking turn completion, revision-safe preparation, and failure

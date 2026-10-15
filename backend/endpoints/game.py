@@ -180,7 +180,8 @@ def prepare_history():
     history = state['history']
     count = len(history['recentEvents'])
     if history.get('summaryEventCount') == count and history.get('summary'):
-        return jsonify({'prepared': True})
+        return jsonify({'prepared': True, 'summary': history['summary'],
+                        'summaryEventCount': count})
     try:
         result = HistorySummarizerCall(settings=current_app.config['llm_settings']).run(
             json.dumps({'completed_history': history['recentEvents']}, ensure_ascii=False))
@@ -204,7 +205,7 @@ def prepare_history():
         conn.execute('UPDATE games SET state_json = ? WHERE user_id = ?',
                      (json.dumps(current, ensure_ascii=False), user_id))
         conn.commit()
-        return jsonify({'prepared': True, 'summaryEventCount': count,
+        return jsonify({'prepared': True, 'summary': summary, 'summaryEventCount': count,
                         'provider': result.provider, 'model': result.model})
     except sqlite3.Error:
         conn.rollback()

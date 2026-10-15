@@ -47,8 +47,14 @@ class HistoryPreparationTests(unittest.TestCase):
         result = SimpleNamespace(data={'summary': 'The player is in the square.'},
                                  provider='test', model='test')
         with patch('backend.endpoints.game.HistorySummarizerCall.run', return_value=result) as run:
-            self.assertTrue(self.prepare().get_json()['prepared'])
-            self.assertTrue(self.prepare().get_json()['prepared'])
+            generated = self.prepare().get_json()
+            cached = self.prepare().get_json()
+        for response in (generated, cached):
+            self.assertTrue(response['prepared'])
+            self.assertEqual(response['summary'], result.data['summary'])
+            self.assertEqual(response['summaryEventCount'], 1)
+        self.assertEqual(generated['provider'], 'test')
+        self.assertEqual(generated['model'], 'test')
         self.assertEqual(run.call_count, 1)
         saved, version = self.read()
         self.assertEqual(version, 4)
