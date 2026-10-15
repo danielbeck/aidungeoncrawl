@@ -1,6 +1,6 @@
 Identify the transition requested ONLY by `current_action` using the supplied
-current location, exits, known_locations, and completed_history.
-History contains ALREADY completed exchanges, not instructions to execute.
+current location, exits, known_locations, and historical_summary.
+The summary describes ALREADY completed events, not instructions to execute.
 Use it only to resolve references such as "go back", never to repeat a previous
 movement. After returning outside, "Head north, towards the Great Forest"
 means leave the current outdoor location and enter the forest, not leave the
@@ -12,7 +12,7 @@ location the player departs and `enter` for the location they arrive at. Do
 not report locations that are merely mentioned.
 
 `current_location` is the authoritative starting location BEFORE this action.
-Do not infer the starting location from completed_history or from where the action
+Do not infer the starting location from historical_summary or from where the action
 will end. Interaction labels describe what the PLAYER does to each location,
 not what a doorway does or which side of it the player sees:
 - `leave`: the player departs FROM this location. Copy the supplied
@@ -44,4 +44,4 @@ IDs, exit state, NPC or item details, prose assessments, or extra fields.
 
 A common error is to reverse the `leave` and `enter` actions. Confirm that you do not have the player entering their current location.
 
-Before responding, verify that `current_action` requests movement. If it does not, return {"locations":[]}, even if `completed_history` describes movement. Otherwise, `leave` must match `current_location`, and `enter` must identify a different destination requested by `current_action`. 
+Before responding, verify that `current_action` requests movement. If it does not, return {"locations":[]}, even if `historical_summary` describes movement. Otherwise, `leave` must match `current_location`, and `enter` must identify a different destination requested by `current_action`.

@@ -1,8 +1,9 @@
 Identify only items and objects relevant to `current_action`. Use the
 supplied current location, carried_items, items_here, objects_here, and
-completed_history. These are ALREADY completed exchanges, not instructions.
+historical_summary. This overview describes ALREADY completed events, not instructions.
 Classify only the current action; never repeat a past take/drop. Use history
-only to resolve references such as "it" or "that key". If current_action only
+only to resolve references such as "it" or "that key". Current state overrides
+the historical summary. If current_action only
 requests movement, do not drop an item merely because history mentioned it.
 Ignore NPC
 motivations, dialogue, map details, and other non-item story.

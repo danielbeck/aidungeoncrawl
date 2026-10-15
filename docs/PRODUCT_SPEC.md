@@ -160,9 +160,28 @@ The game maintains a record of player actions, narrative responses, and signific
 
 This history provides context for interpreting ambiguous references and maintaining narrative continuity. It is not the authoritative source of current inventory, location, or object state.
 
-The history is a simple ordered record of player actions and narrator responses.
-It is passed to the managers and narrator to support continuity. Do not
-automatically summarize or compact older exchanges.
+Deterministic code retains the complete, literal, ordered history of player
+actions and narrator responses. Summarization must never replace, truncate, or
+rewrite this record; the full conversation remains available for display and
+debugging.
+
+After each completed action, including an unsuccessful in-world attempt, the
+engine submits the entire literal history, including that action and its
+narration, to a Summarizer. The Summarizer produces a brief overview of past
+events, emphasizing the most recent events while retaining older facts needed
+for continuity. It summarizes completed events, not pending instructions.
+Each overview is generated from the full literal history, not from a previous
+summary alone.
+
+On the next turn, managers and the narrator receive this summarized history
+instead of literal exchanges. The current action is supplied separately and is
+the only instruction to respond to. The summary is background context for
+continuity and reference resolution, never authority over deterministic world
+state. The Comparator continues to receive only the entities it compares.
+
+The overview is stored separately and limited to 1500 characters. If
+summarization fails, the completed turn is not saved; the error is surfaced
+without altering the previously saved history or state.
 
 ### Character death and game termination
 
@@ -183,7 +202,8 @@ The first version should support:
 * LLM-driven interpretation and narration.
 * Deterministic identity reconciliation for inventory items, locations, and NPCs.
 * Creation and reuse of entity records without LLM-generated IDs.
-* A simple ordered history of player actions and narrator responses.
+* A complete literal history of player actions and narrator responses, with a
+  separate recent-focused summary for LLM context.
 * Preservation and display of existing persistent object records.
 * Graceful handling of failed or invalid model responses.
 

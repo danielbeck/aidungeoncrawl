@@ -15,6 +15,7 @@ try:
         MapManagerCall,
         NPCManagerCall,
         NarratorCall,
+        HistorySummarizerCall,
     )
 except ImportError:
     from llm_provider import LLMError
@@ -24,12 +25,11 @@ except ImportError:
         MapManagerCall,
         NPCManagerCall,
         NarratorCall,
+        HistorySummarizerCall,
     )
 
 
 START_LOCATION_ID = 'town-square-outside-tavern'
-MANAGER_HISTORY_EVENTS = 2
-MANAGER_HISTORY_CONTENT_LIMIT = 500
 logger = logging.getLogger(__name__)
 
 
@@ -492,21 +492,13 @@ def process_turn(state, action, calls=None, settings=None, on_progress=None):
         'npcs': NPCManagerCall(settings=settings),
         'narrator': NarratorCall(settings=settings),
         'comparator': ComparatorCall(settings=settings),
+        'summarizer': HistorySummarizerCall(settings=settings),
     }
     context = _context(state)
     completed_history = [
         {'kind': event['kind'], 'content': event['content']}
         for event in state['history'].get('recentEvents', [])
     ]
-    manager_turn_context = {
-        'current_action': action,
-        'completed_history': [
-            {'kind': event['kind'],
-             'content': event['content'][:MANAGER_HISTORY_CONTENT_LIMIT]}
-            for event in completed_history[-MANAGER_HISTORY_EVENTS:]
-        ],
-    }
-
     ignored_interactions = []
 
     def progress(component, status, **details):
@@ -514,6 +506,34 @@ def process_turn(state, action, calls=None, settings=None, on_progress=None):
             ignored_interactions.append({'component': component, **copy.deepcopy(details)})
         if on_progress is not None:
             on_progress({'component': component, 'status': status, **details})
+
+    def summarize(history):
+        request = {'completed_history': copy.deepcopy(history)}
+        progress('summarizer', 'started', request=request)
+        try:
+            result = _run_logged('summarizer', calls['summarizer'], request)
+            summary = HistorySummarizerCall.validate_response(result.data)['summary']
+        except LLMError as error:
+            progress('summarizer', 'failed', error=str(error),
+                     response=getattr(error, 'details', None))
+            raise
+        progress('summarizer', 'completed', response={'summary': summary},
+                 provider=result.provider, model=result.model)
+        return summary
+
+    history = state['history']
+    if ('summary' in history
+            and history.get('summaryEventCount') == len(completed_history)):
+        historical_summary = HistorySummarizerCall.validate_response(
+            {'summary': history['summary']})['summary']
+    elif len(completed_history) > 1:
+        historical_summary = summarize(completed_history)
+    else:
+        historical_summary = ''
+    manager_turn_context = {
+        'current_action': action,
+        'historical_summary': historical_summary,
+    }
 
     manager_contexts = {
         'inventory': {
@@ -554,7 +574,6 @@ def process_turn(state, action, calls=None, settings=None, on_progress=None):
     effective_manager_results = copy.deepcopy(manager_results)
     progress('narrator', 'waiting', reason='Waiting for deterministic state reconciliation.')
     candidate = copy.deepcopy(state)
-    candidate['history'].pop('summary', None)
     current_location_id = state['currentLocationId']
     try:
         manager_items = _apply_inventory_interactions(
@@ -596,7 +615,7 @@ def process_turn(state, action, calls=None, settings=None, on_progress=None):
     }
     narrator_input = {
         'current_action': action,
-        'completed_history': completed_history,
+        'historical_summary': historical_summary,
         'game_context': context,
         'resolved_context': resolved_context,
         'movement_outcome': movement_outcome,
@@ -622,6 +641,8 @@ def process_turn(state, action, calls=None, settings=None, on_progress=None):
         {'kind': 'player_action', 'content': action},
         {'kind': 'narration', 'content': response['narration']},
     ])
+    candidate['history']['summary'] = summarize(candidate['history']['recentEvents'])
+    candidate['history']['summaryEventCount'] = len(candidate['history']['recentEvents'])
     logger.info(
         'Resolved notable elements for game %s: %s',
         state['id'], {key: [entity['name'] for entity in values]

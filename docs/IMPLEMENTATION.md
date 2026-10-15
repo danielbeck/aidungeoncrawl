@@ -14,7 +14,7 @@ The game engine maintains the authoritative logical state:
 
 * **Game state:** Current location, player status, and whether the game is active or ended.
 * **World state:** Locations, exits, items, objects, and NPCs, with stable IDs and the state needed by the game.
-* **History:** A simple ordered record of player actions and narrator responses. Do not add automatic summaries or other history structure.
+* **History:** The complete literal ordered record of player actions and narrator responses in `history.recentEvents` (despite its legacy name, this holds all exchanges). A separate derived `history.summary` provides LLM context; it never replaces or compacts the stored literal record. `history.summaryEventCount` records how many entries the summary covers.
 
 Existing object records remain available to the game UI, but the identity-only
 turn contract does not create or change objects.
@@ -68,7 +68,7 @@ Returns only an `npcs` list, with each entry's name, objective description, and 
 
 ### Narrator
 
-Receives `current_action` once, prior exchanges once as `completed_history`, the starting `game_context`, resulting `resolved_context`, and engine-retained `resolved_interactions`. Both state contexts exclude action and history. Completed exchanges are background for reference resolution, never instructions to replay; authoritative state takes precedence. It produces only player-facing narration, `action_succeeded`, and `game_over`. It does not echo interaction lists or return manager overrides. State is resolved before narration; there is no cross-model list-equality check.
+Receives `current_action` once, a brief overview of completed events as `historical_summary`, the starting `game_context`, resulting `resolved_context`, and engine-retained `resolved_interactions`. Both state contexts exclude action and history. The summary is background for reference resolution, never instructions to replay; authoritative state takes precedence. It produces only player-facing narration, `action_succeeded`, and `game_over`. It does not echo interaction lists or return manager overrides. State is resolved before narration; there is no cross-model list-equality check.
 
 The Narrator returns structured JSON with this contract:
 
@@ -128,7 +128,9 @@ The deterministic turn processor coordinates each gameplay turn:
 6. Resolve map interactions against the stored current location, ignore mismatched departures without reversing labels, and apply valid movement and reciprocal exits.
 7. Reconcile NPC entries at the resulting location through the Comparator.
 8. Give the Narrator starting and resulting context plus resolved interactions. Validate its narration and boolean outcome flags; do not ask it to echo state.
-9. Append the player action and narration to history, then commit the completed turn.
+9. Append the player action and narration to the complete literal history.
+10. Submit that entire history to the Summarizer, validate and store its overview,
+    then commit the completed turn and summary together.
 
 If any required LLM call fails or returns invalid output, return an error and leave the stored game state unchanged. Do not commit partially reconciled entities.
 
@@ -136,9 +138,53 @@ If any required LLM call fails or returns invalid output, return an error and le
 
 Construct a minimal, purpose-specific context for each LLM call. The shared gameplay context contains the player's intended action, current location, carried items, known available items, items and known objects at the current location, NPCs at the current location, known locations and exits, and recent exchanges. Include only the natural-language names and descriptions needed for interpretation.
 
-Managers receive `current_action`, domain-specific state, and the two most recent completed history events, capped at 500 characters each and labeled `completed_history`. Prompts classify only the current action and use completed exchanges only for reference resolution. Inventory receives carried and local items/objects; Map receives locations and exits; NPC receives only NPCs at the current location. The Narrator receives the action and full completed history once each, outside the history-free starting and resulting state contexts, plus engine-resolved interactions. Original reports are returned in `turn.manager_results`; `turn.effective_manager_results` and `turn.notable_elements` retain applied interpretations. The Comparator receives an entity type, one candidate, and the proposed entity, using names and descriptions only.
+Managers receive `current_action`, domain-specific state, and `historical_summary`, not literal exchanges. Prompts classify only the current action and use the overview only for continuity and reference resolution. Inventory receives carried and local items/objects; Map receives locations and exits; NPC receives only NPCs at the current location. The Narrator receives the action and historical summary once each, outside the history-free starting and resulting state contexts, plus engine-resolved interactions. Original reports are returned in `turn.manager_results`; `turn.effective_manager_results` and `turn.notable_elements` retain applied interpretations. The Comparator receives an entity type, one candidate, and the proposed entity, using names and descriptions only.
 
 LLMs are not responsible for ID generation, database tracking, or maintaining map topology.
+
+### Full-history summarization
+
+* Deterministic code preserves every literal history entry in order, including
+  the initial narration and every completed player-action/narration pair.
+  The UI and debugging continue to use this complete record.
+* After resolving and narrating each action, append its literal action and
+  response to the candidate history. Submit the entire candidate history to
+  the Summarizer, including all older entries and the just-completed exchange.
+  An unsuccessful in-world action is still a completed exchange; a processing
+  failure is not.
+* Generate a new brief overview from that full record on every completed turn.
+  Do not summarize only a sliding window or recursively compact the previous
+  summary. Emphasize recent events, retaining older context needed for active
+  goals, unresolved events, dialogue continuity, and reference resolution.
+  Avoid copying lengthy narrative prose or adding facts or instructions.
+* Store the validated overview separately from literal history. Commit it
+  together with the completed turn so that the summary corresponds to the
+  saved history. A failed or invalid summary must be surfaced explicitly and
+  must not commit a turn with stale or missing summary context.
+* For the following turn, Inventory, Map, NPC, and Narrator receive the overview
+  as `historical_summary`, instead of literal `completed_history`.
+  Keep `current_action` separate and preserve each component's existing
+  purpose-specific state and resolved-outcome inputs. The Comparator receives
+  no historical summary.
+* Label the overview as already-completed background, not actions to execute.
+  Authoritative state and current resolved outcomes always override the summary.
+  The pending action must never be included in the summary used to interpret
+  that same action.
+* Before the first player action, `historical_summary` is empty and the starting
+  state supplies context. Existing games without a current summary generate one
+  from their full saved history before manager calls. A summary is current when
+  `summaryEventCount` equals the literal history length; legacy summaries without
+  that count are regenerated.
+
+`HistorySummarizerCall` uses the `history_summarizer` prompt/schema and the same
+configured provider/settings as other gameplay calls. Its response contains only
+`summary`, a non-empty string of at most 1500 characters; the prompt requests
+roughly 100-200 words or fewer when little has happened. Summarizer started,
+completed, and failed progress events expose its input, output, and errors in
+the UI. Tests verify full-history submission, separate literal-history retention,
+summary-only history context for gameplay LLMs, output validation, and atomic
+failure behavior. Recent-event emphasis is a prompt requirement, not a
+deterministically verified semantic property.
 
 ## Communication protocol and validation
 

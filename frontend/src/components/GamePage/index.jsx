@@ -148,6 +148,7 @@ function GamePage() {
                   <strong>{({
                     inventory: 'Inventory manager', map: 'Map manager', npcs: 'NPC manager',
                     narrator: 'Dungeon Master', comparator: 'Comparator', turn: 'Turn',
+                    summarizer: 'History summarizer',
                   })[event.component] || event.component}</strong>
                   {' — '}{event.status}{event.attempt ? ` (attempt ${event.attempt})` : ''}
                   {event.provider && <small>{' '}{event.provider}/{event.model}</small>}

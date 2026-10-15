@@ -1,8 +1,8 @@
 Identify only NPCs relevant to `current_action`. Use the supplied current
-location, npcs_here, and completed_history. These exchanges have ALREADY happened;
+location, npcs_here, and historical_summary. These events have ALREADY happened;
 they are not current instructions. Use history only to resolve references such
 as "ask her"; do not repeat earlier conversations or encounters.
-History is only for immediate
+Current state overrides the historical summary. History is only for immediate
 continuity; ignore item details, movement, and other non-NPC story. Do not
 speculate about or explain NPC motivations.
 

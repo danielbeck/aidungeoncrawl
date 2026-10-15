@@ -110,3 +110,20 @@ class ComparatorCall(LLMCall):
                 'comparator: response must contain boolean same_entity only.',
                 details=data)
         return data
+
+
+class HistorySummarizerCall(LLMCall):
+    name = 'history_summarizer'
+
+    def format_user_input(self, user_input):
+        return f'Summarize these already-completed exchanges, emphasizing recent events:\n{user_input}'
+
+    @staticmethod
+    def validate_response(data):
+        if (not isinstance(data, dict) or set(data) != {'summary'}
+                or not isinstance(data['summary'], str) or not data['summary'].strip()
+                or len(data['summary']) > 1500):
+            raise LLMResponseError(
+                'history_summarizer: response must contain only a non-empty summary '
+                'of at most 1500 characters.', details=data)
+        return data
