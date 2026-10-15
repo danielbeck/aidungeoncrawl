@@ -24,6 +24,12 @@ The supplied repository contains sample backend code for connecting to an LLM an
 
 * There are no required tabletop gaming rules, character statistics, dice mechanics, or combat systems.
 * The narrator should create an interesting, coherent, responsive storyline based on the player's actions.
+* The narrator actively develops longer story threads from established history,
+  offering actionable hints, clues, and occasional fair puzzles rather than
+  merely restating actions. It should foreshadow, deepen, and resolve mysteries
+  while adapting to the player's interests, preserving agency, and respecting
+  engine-resolved state. Relevant clues and puzzle details survive summarization;
+  future plot ideas remain provisional rather than hidden authoritative state.
 * The player may attempt any action they can describe in natural language.
 * Actions should have plausible consequences consistent with the established world and previous events.
 * The game should distinguish between what is possible, what is plausible but uncertain, and what is impossible given established facts.

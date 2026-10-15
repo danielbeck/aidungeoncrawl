@@ -6,11 +6,7 @@ body {
 }
 
 .App-header {
-    background: #282c34;
-    color: white;
-    padding: 2rem 1rem 1rem 1rem;
-    text-align: center;
-    position: relative;
+    height: 2rem;
 }
 
 .App-header .auth-link {
@@ -26,11 +22,78 @@ body {
     text-decoration: none;
     width: 44px;
 
-    &:hover { background: rgb(255 255 255 / 12%); }
-    &:focus-visible { outline: 3px solid #387f69; outline-offset: 3px; }
+    &:hover {
+        background: rgb(255 255 255 / 12%);
+    }
+
+    &:focus-visible {
+        outline: 3px solid #387f69;
+        outline-offset: 3px;
+    }
+}
+
+.welcome-message {
+    background: #fff;
+    border: 1px solid #d5dfda;
+    border-radius: 12px;
+    box-shadow: 0 8px 28px rgb(38 59 54 / 6%);
+    color: #263b36;
+    margin: 64px auto;
+    max-width: 680px;
+    padding: 48px 32px;
+    text-align: center;
+
+    h2 {
+        font-size: clamp(32px, 6vw, 48px);
+        line-height: 1.15;
+        margin: 12px auto 28px;
+        max-width: 540px;
+    }
+}
+
+.welcome-eyebrow {
+    color: #286650;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+}
+
+.welcome-cta {
+    background: #286650;
+    border-radius: 6px;
+    color: #fff;
+    display: inline-block;
+    font-weight: 600;
+    padding: 12px 20px;
+    text-decoration: none;
+
+    &:hover {
+        background: #1e503e;
+    }
+
+    &:focus-visible {
+        outline: 3px solid #387f69;
+        outline-offset: 3px;
+    }
+}
+
+.welcome-note {
+    color: #53665f;
+    font-size: 14px;
+    line-height: 1.6;
+    margin: 24px auto 0;
+    max-width: 480px;
 }
 
 h1,
 h2 {
     font-weight: 600;
+}
+
+@media (max-width: 480px) {
+    .welcome-message {
+        margin: 40px 16px;
+        padding: 36px 22px;
+    }
 }

@@ -31,7 +31,7 @@ function App() {
   return (
     <div className="App">
       <header className="App-header">
-        <h1>AI Dungeon Crawl</h1>
+
         {(user || location.pathname.replace(/\/+$/, '') !== '/auth') && (
           <Link className="auth-link" to={user ? '/profile' : '/auth'}
             aria-label={user ? 'Your profile' : 'Log in or register'}
@@ -58,10 +58,14 @@ function App() {
             ? null
             : user
               ? <GamePage />
-              : <div className="welcome-message">
-                <p>Step into a world shaped by your choices.</p>
-                <Link to="/auth">Log in or create an account to begin.</Link>
-              </div>} />
+              : <section className="welcome-message" aria-labelledby="welcome-title">
+                <p className="welcome-eyebrow">A tiny text adventure</p>
+                <h2 id="welcome-title">Go on... an adventure!</h2>
+                <Link className="welcome-cta" to="/auth">Let&apos;s play</Link>
+                <p className="welcome-note">Your choices shape the story. The world grows around you.
+                  You gotta create a free account so we have somewhere to store your progress. No spam, promise.</p>
+              </section>
+          } />
         </Routes>
       </main>
     </div>

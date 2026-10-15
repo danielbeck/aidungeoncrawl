@@ -3,6 +3,17 @@ import { fetchAPI, streamGameTurn } from '../../api'
 import styles from './GamePage.module.scss'
 import { finishProgress, isProgressPending, updateProgress } from './progress'
 
+const progressComponentLabels = {
+  inventory: 'Inventory manager',
+  map: 'Movement intent',
+  npcs: 'NPC manager',
+  movement_resolver: 'Movement resolver',
+  narrator: 'Dungeon Master',
+  comparator: 'Comparator',
+  turn: 'Turn',
+  summarizer: 'History summarizer',
+}
+
 function GamePage() {
   const [game, setGame] = useState(null)
   const [action, setAction] = useState('')
@@ -24,8 +35,10 @@ function GamePage() {
       const response = await fetchAPI('/game/prepare', {
         method: 'POST', credentials: 'include', body: JSON.stringify({ game_id: gameId }),
       })
-      update({ status: response.prepared ? 'completed' : 'skipped',
-        response, reason: response.reason || 'Next-turn context is ready.' })
+      update({
+        status: response.prepared ? 'completed' : 'skipped',
+        response, reason: response.reason || 'Next-turn context is ready.'
+      })
     } catch (err) {
       update({ status: 'failed', error: err.message })
     }
@@ -151,38 +164,54 @@ function GamePage() {
             ))}
           </ol>
           {progress.length > 0 && <details className={styles.progress} aria-label="Turn progress">
-            <summary>Turn progress</summary>
+            <summary>
+              Turn progress
+              <span className={styles.progressSummaryStatuses}>
+                {progress.map((event, index) => {
+                  const label = progressComponentLabels[event.component] || event.component
+                  const failed = event.status === 'failed' || event.status === 'interrupted'
+                  return <span
+                    key={`${event.component}-${index}`}
+                    className={styles.progressSummaryStatus}
+                    role="img"
+                    aria-label={`${label}: ${event.status}`}
+                    title={`${label}: ${event.status}`}
+                  >
+                    {isProgressPending(event)
+                      ? <span className={styles.spinner} aria-hidden="true" />
+                      : failed
+                        ? <span className={styles.progressFailure} aria-hidden="true">!</span>
+                        : <span className={styles.progressComplete} aria-hidden="true">✓</span>}
+                  </span>
+                })}
+              </span>
+            </summary>
             <p>Intermediate responses are debug information, not committed game state.</p>
             <ol role="log" aria-live="polite" aria-relevant="additions text">
               {progress.map((event, index) => (
                 <li key={index} aria-busy={isProgressPending(event)}>
                   {isProgressPending(event) && <span className={styles.spinner} aria-hidden="true" />}
-                  <strong>{({
-                    inventory: 'Inventory manager', map: 'Movement intent', npcs: 'NPC manager',
-                    movement_resolver: 'Movement resolver',
-                    narrator: 'Dungeon Master', comparator: 'Comparator', turn: 'Turn',
-                    summarizer: 'History summarizer',
-                  })[event.component] || event.component}</strong>
+                  <strong>{progressComponentLabels[event.component] || event.component}</strong>
                   {' — '}{event.status}{event.attempt ? ` (attempt ${event.attempt})` : ''}
                   {event.provider && <small>{' '}{event.provider}/{event.model}</small>}
                   {event.reason && <p>{event.reason}</p>}
                   {event.request && <details>
-                    <summary>Request debug details</summary>
+                    <summary>Request details</summary>
                     <pre>{JSON.stringify(event.request, null, 2)}</pre>
                   </details>}
                   {event.proposed_entity && <details>
                     <summary>Proposed entity</summary>
                     <pre>{JSON.stringify({
-                    entity_type: event.entity_type,
-                    proposed_entity: event.proposed_entity,
-                  }, null, 2)}</pre></details>}
+                      entity_type: event.entity_type,
+                      proposed_entity: event.proposed_entity,
+                    }, null, 2)}</pre></details>}
                   {event.matched_entity && <details>
                     <summary>Matched entity</summary>
                     <pre>{JSON.stringify({
-                    matched_entity: event.matched_entity,
-                  }, null, 2)}</pre></details>}
+                      matched_entity: event.matched_entity,
+                    }, null, 2)}</pre></details>}
                   {event.response && <details>
-                    <summary>Response debug details</summary>
+                    <summary>Response</summary>
                     <pre>{JSON.stringify(event.response, null, 2)}</pre>
                   </details>}
                   {event.error && <p className={styles.error}>{event.error}</p>}

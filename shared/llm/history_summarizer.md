@@ -6,6 +6,11 @@ Focus most of the overview on the most recent exchanges. Retain older facts only
 when needed for active goals, unresolved events, commitments, dialogue continuity,
 or understanding references. Describe events in past tense, without copying
 lengthy narration, dialogue, or a turn-by-turn transcript.
+Preserve actionable clues, puzzle rules or patterns, discoveries, unresolved
+mysteries, and the player's chosen leads when they remain relevant. Retain exact
+short wording or sequences when a puzzle depends on them. Keep observed facts
+distinct from rumors and guesses, and retain resolutions so solved mysteries
+are not presented as unsolved again. Do not invent a future plot or solutions.
 
 Distinguish attempted actions from completed outcomes. Do not turn a failed
 attempt into a success. Do not infer new inventory, location, or NPC changes.
