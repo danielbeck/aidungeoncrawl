@@ -43,6 +43,26 @@
   border-radius: 12px;
 }
 
+.spinner {
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  margin-right: 8px;
+  border: 2px solid #cfc5b7;
+  border-top-color: #405f48;
+  border-radius: 50%;
+  vertical-align: -0.1em;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; }
+}
+
 .story { padding: 24px; }
 
 .events {

@@ -160,8 +160,8 @@ The deterministic turn processor coordinates each gameplay turn:
 7. Reconcile NPC entries at the resulting location through the Comparator.
 8. Give the Narrator starting and resulting context plus resolved interactions. Validate its narration and boolean outcome flags; do not ask it to echo state.
 9. Append the player action and narration to the complete literal history.
-10. Submit that entire history to the Summarizer, validate and store its overview,
-    then commit the completed turn and summary together.
+10. Commit the completed turn and return narration immediately. The browser
+    requests summary preparation separately, without disabling the next action.
 
 If any required LLM call fails or returns invalid output, return an error and leave the stored game state unchanged. Do not commit partially reconciled entities.
 
@@ -179,7 +179,8 @@ LLMs are not responsible for ID generation, database tracking, or maintaining ma
   the initial narration and every completed player-action/narration pair.
   The UI and debugging continue to use this complete record.
 * After resolving and narrating each action, append its literal action and
-  response to the candidate history. Submit the entire candidate history to
+  response to the candidate history and save the turn. The browser then calls
+  `POST /game/prepare` with `game_id`, submitting the entire saved history to
   the Summarizer, including all older entries and the just-completed exchange.
   An unsuccessful in-world action is still a completed exchange; a processing
   failure is not.
@@ -188,11 +189,16 @@ LLMs are not responsible for ID generation, database tracking, or maintaining ma
   summary. Emphasize recent events, retaining older context needed for active
   goals, unresolved events, dialogue continuity, and reference resolution.
   Avoid copying lengthy narrative prose or adding facts or instructions.
-* Store the validated overview separately from literal history. Commit it
-  together with the completed turn so that the summary corresponds to the
-  saved history. A failed or invalid summary must be surfaced explicitly and
-  must not commit a turn with stale or missing summary context.
-* For the following turn, Inventory, Map, NPC, and Narrator receive the overview
+* Store the validated overview separately from literal history. Preparation
+  does not change the gameplay revision or idempotent turn response. Save it
+  only if the game ID and revision still match its input; discard late results
+  after another action, restart, or stop. Never overwrite newer game state.
+  Failures appear in debug progress and do not roll back a completed turn.
+  If preparation is missing or unfinished, the next action regenerates the
+  required overview before interpreting that action. It never uses stale
+  summary context. This may delay that next response, not submission of the
+  next action or display of the already-completed narration.
+* For the following turn, Inventory, NPC, and Narrator receive the overview
   as `historical_summary`, instead of literal `completed_history`.
   Keep `current_action` separate and preserve each component's existing
   purpose-specific state and resolved-outcome inputs. The Comparator receives
@@ -212,9 +218,12 @@ configured provider/settings as other gameplay calls. Its response contains only
 `summary`, a non-empty string of at most 1500 characters; the prompt requests
 roughly 100-200 words or fewer when little has happened. Summarizer started,
 completed, and failed progress events expose its input, output, and errors in
-the UI. Tests verify full-history submission, separate literal-history retention,
-summary-only history context for gameplay LLMs, output validation, and atomic
-failure behavior. Recent-event emphasis is a prompt requirement, not a
+the UI. Post-turn preparation uses a separate HTTP request, compatible with CGI
+without depending on a worker surviving the original request. Its JSON response
+and failure are collapsed in debug progress; late UI updates are ignored after
+the next action or restart. Tests verify full-history submission, literal-history
+retention, nonblocking turn completion, revision-safe preparation, and failure
+reporting. Recent-event emphasis is a prompt requirement, not a
 deterministically verified semantic property.
 
 ## Communication protocol and validation
@@ -240,6 +249,11 @@ deterministic matches, deterministic ambiguity events, and empty-candidate skips
 LLM calls and their results or failures remain visible. The Dungeon
 Master displays waiting, started, completed, or failed progress; if reconciliation
 fails before narration, it is marked skipped with the reason instead of disappearing.
+Each operation occupies one progress entry: waiting, started, received, and
+completion events update it in place, with a spinner while pending. Repeated
+calls (such as individual Comparator comparisons) retain separate entries.
+All JSON request, response, and entity details are collapsed by default.
+Stream failures stop pending spinners and mark interrupted operations explicitly.
 
 Failures in LLM communication, response validation, or deterministic reconciliation leave the stored game state untouched.
 

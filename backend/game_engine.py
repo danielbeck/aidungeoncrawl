@@ -669,8 +669,8 @@ def process_turn(state, action, calls=None, settings=None, on_progress=None):
         {'kind': 'player_action', 'content': action},
         {'kind': 'narration', 'content': response['narration']},
     ])
-    candidate['history']['summary'] = summarize(candidate['history']['recentEvents'])
-    candidate['history']['summaryEventCount'] = len(candidate['history']['recentEvents'])
+    candidate['history']['summary'] = historical_summary
+    candidate['history']['summaryEventCount'] = len(completed_history)
     logger.info(
         'Resolved notable elements for game %s: %s',
         state['id'], {key: [entity['name'] for entity in values]

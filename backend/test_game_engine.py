@@ -1234,7 +1234,7 @@ class GameEngineTests(unittest.TestCase):
         process_turn(new_game(7), 'Look around.', calls, on_progress=on_progress)
         completed = [event['component'] for event in events if event['status'] == 'completed']
         self.assertLess(completed.index('map'), completed.index('inventory'))
-        self.assertEqual(set(completed), {'inventory', 'map', 'npcs', 'narrator', 'summarizer'})
+        self.assertEqual(set(completed), {'inventory', 'map', 'npcs', 'narrator'})
 
     def test_legacy_summary_is_regenerated_and_history_is_not_compacted(self):
         game = new_game(7)
@@ -1248,23 +1248,21 @@ class GameEngineTests(unittest.TestCase):
         updated, _ = process_turn(game, 'Look around.', calls)
 
         self.assertEqual(updated['history']['summary'], calls['summarizer'].data['summary'])
-        self.assertEqual(updated['history']['summaryEventCount'], 32)
+        self.assertEqual(updated['history']['summaryEventCount'], 30)
         self.assertEqual(len(updated['history']['recentEvents']), 32)
         self.assertEqual(updated['history']['recentEvents'][:30], game['history']['recentEvents'])
         self.assertEqual(json.loads(calls['summarizer'].inputs[0])['completed_history'],
                          game['history']['recentEvents'])
-        self.assertEqual(json.loads(calls['summarizer'].inputs[1])['completed_history'],
-                         updated['history']['recentEvents'])
+        self.assertEqual(len(calls['summarizer'].inputs), 1)
         self.assertEqual(game['history']['summary'], 'Old summary.')
 
-    def test_summary_is_refreshed_after_each_turn_and_used_on_next_turn(self):
+    def test_summary_preparation_is_deferred_until_next_turn_if_not_prepared(self):
         game = new_game(7)
         calls = fake_calls(narration='You waited in the square.')
         calls['summarizer'].data = {'summary': 'The player waited in the square.'}
         updated, _ = process_turn(game, 'Wait.', calls)
-        self.assertEqual(len(calls['summarizer'].inputs), 1)
-        self.assertEqual(json.loads(calls['summarizer'].inputs[0])['completed_history'],
-                         updated['history']['recentEvents'])
+        self.assertEqual(calls['summarizer'].inputs, [])
+        self.assertEqual(updated['history']['summaryEventCount'], 1)
         self.assertEqual(json.loads(calls['narrator'].inputs[0])['historical_summary'], '')
         next_calls = fake_calls()
         next_calls['narrator'].data['action_succeeded'] = False
@@ -1273,21 +1271,21 @@ class GameEngineTests(unittest.TestCase):
         for name in ('inventory', 'map', 'npcs', 'narrator'):
             payload = json.loads(next_calls[name].inputs[0])
             if name != 'map':
-                self.assertEqual(payload['historical_summary'], updated['history']['summary'])
+                self.assertEqual(payload['historical_summary'], next_calls['summarizer'].data['summary'])
             else:
                 self.assertNotIn('historical_summary', payload)
             self.assertEqual(payload['current_action'], 'Jump.')
             self.assertNotIn('completed_history', payload)
         self.assertEqual(len(next_calls['summarizer'].inputs), 1)
         self.assertEqual(json.loads(next_calls['summarizer'].inputs[0])['completed_history'],
-                         next_game['history']['recentEvents'])
+                         updated['history']['recentEvents'])
         self.assertEqual(next_game['history']['summary'], next_calls['summarizer'].data['summary'])
-        self.assertEqual(next_game['history']['summaryEventCount'], 5)
+        self.assertEqual(next_game['history']['summaryEventCount'], 3)
         self.assertEqual(next_game['history']['recentEvents'][:3],
                          updated['history']['recentEvents'])
         self.assertEqual(next_calls['comparator'].inputs, [])
 
-    def test_failed_or_invalid_summary_does_not_commit_candidate(self):
+    def test_completed_turn_does_not_call_or_wait_for_summarizer(self):
         class BrokenSummarizer(FakeCall):
             def run(self, user_input):
                 raise LLMError('summarizer unavailable')
@@ -1303,12 +1301,14 @@ class GameEngineTests(unittest.TestCase):
             calls['summarizer'] = summarizer
             original = copy.deepcopy(game)
             events = []
-            with self.subTest(summarizer=summarizer), self.assertRaises(LLMError):
-                process_turn(game, 'Take the coin.', calls, on_progress=events.append)
+            with self.subTest(summarizer=summarizer):
+                updated, _ = process_turn(game, 'Take the coin.', calls, on_progress=events.append)
             self.assertEqual(game, original)
+            self.assertEqual(updated['world']['items'][0]['name'], 'Coin')
+            self.assertEqual(calls['summarizer'].inputs, [])
             self.assertTrue(calls['narrator'].inputs)
-            self.assertEqual(events[-1]['component'], 'summarizer')
-            self.assertEqual(events[-1]['status'], 'failed')
+            self.assertEqual(events[-1]['component'], 'narrator')
+            self.assertEqual(events[-1]['status'], 'completed')
 
     def test_older_game_summary_failure_stops_before_manager_calls(self):
         game = new_game(7)

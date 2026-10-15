@@ -171,22 +171,24 @@ rewrite this record; the full conversation remains available for display and
 debugging.
 
 After each completed action, including an unsuccessful in-world attempt, the
-engine submits the entire literal history, including that action and its
-narration, to a Summarizer. The Summarizer produces a brief overview of past
+engine saves and returns the narration without waiting for summarization.
+The browser separately requests preparation of the entire saved literal
+history for the next turn. The Summarizer produces a brief overview of past
 events, emphasizing the most recent events while retaining older facts needed
 for continuity. It summarizes completed events, not pending instructions.
 Each overview is generated from the full literal history, not from a previous
 summary alone.
 
-On the next turn, managers and the narrator receive this summarized history
+On the next turn, inventory and NPC managers and the narrator receive this summarized history
 instead of literal exchanges. The current action is supplied separately and is
 the only instruction to respond to. The summary is background context for
 continuity and reference resolution, never authority over deterministic world
 state. The Comparator continues to receive only the entities it compares.
 
-The overview is stored separately and limited to 1500 characters. If
-summarization fails, the completed turn is not saved; the error is surfaced
-without altering the previously saved history or state.
+The overview is stored separately and limited to 1500 characters. Preparation
+does not disable the next action. Late summaries cannot overwrite newer turns.
+If preparation fails, the error is surfaced without undoing the saved turn;
+the next action regenerates missing context before using it.
 
 ### Character death and game termination
 

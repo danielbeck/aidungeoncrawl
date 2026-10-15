@@ -10,9 +10,11 @@ from flask import Blueprint, Response, current_app, jsonify, request, session
 try:
     from backend.game_engine import InvalidTurnResponse, new_game, process_turn
     from backend.llm_provider import LLMError
+    from backend.llm_calls.gameplay import HistorySummarizerCall
 except ImportError:
     from game_engine import InvalidTurnResponse, new_game, process_turn
     from llm_provider import LLMError
+    from llm_calls.gameplay import HistorySummarizerCall
 
 
 bp = Blueprint('game', __name__, url_prefix='/game')
@@ -152,6 +154,62 @@ def start_new_game():
         conn.rollback()
         current_app.logger.exception('Failed to start game for user %s', user_id)
         return jsonify({'error': 'Unable to start a new game right now.'}), 500
+    finally:
+        conn.close()
+
+
+@bp.route('/prepare', methods=['POST'])
+def prepare_history():
+    user_id = _user_id()
+    if not user_id:
+        return jsonify({'error': 'Authentication is required to play.'}), 401
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get('game_id'), str):
+        return jsonify({'error': 'game_id is required.'}), 400
+    conn = _get_db()
+    try:
+        row = _load_row(conn, user_id)
+        if row is None:
+            return jsonify({'error': 'Start a game before preparing history.'}), 409
+        state = json.loads(row['state_json'])
+        version = row['version']
+    finally:
+        conn.close()
+    if state['id'] != data['game_id']:
+        return jsonify({'prepared': False, 'reason': 'The game has changed.'})
+    history = state['history']
+    count = len(history['recentEvents'])
+    if history.get('summaryEventCount') == count and history.get('summary'):
+        return jsonify({'prepared': True})
+    try:
+        result = HistorySummarizerCall(settings=current_app.config['llm_settings']).run(
+            json.dumps({'completed_history': history['recentEvents']}, ensure_ascii=False))
+        summary = HistorySummarizerCall.validate_response(result.data)['summary']
+    except LLMError:
+        current_app.logger.exception('History preparation failed for user %s', user_id)
+        return jsonify({'error': 'History preparation failed. It will be retried on the next action.'}), 502
+    conn = _get_db()
+    try:
+        conn.execute('BEGIN IMMEDIATE')
+        row = _load_row(conn, user_id)
+        if row is None or row['version'] != version:
+            conn.rollback()
+            return jsonify({'prepared': False, 'reason': 'A newer game revision is already saved.'})
+        current = json.loads(row['state_json'])
+        if current['id'] != state['id']:
+            conn.rollback()
+            return jsonify({'prepared': False, 'reason': 'The game has changed.'})
+        current['history']['summary'] = summary
+        current['history']['summaryEventCount'] = count
+        conn.execute('UPDATE games SET state_json = ? WHERE user_id = ?',
+                     (json.dumps(current, ensure_ascii=False), user_id))
+        conn.commit()
+        return jsonify({'prepared': True, 'summaryEventCount': count,
+                        'provider': result.provider, 'model': result.model})
+    except sqlite3.Error:
+        conn.rollback()
+        current_app.logger.exception('Failed to save prepared history for user %s', user_id)
+        return jsonify({'error': 'Prepared history could not be saved.'}), 500
     finally:
         conn.close()
 

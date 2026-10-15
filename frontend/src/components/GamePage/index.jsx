@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { fetchAPI, streamGameTurn } from '../../api'
 import styles from './GamePage.module.scss'
+import { finishProgress, isProgressPending, updateProgress } from './progress'
 
 function GamePage() {
   const [game, setGame] = useState(null)
@@ -10,6 +11,25 @@ function GamePage() {
   const [error, setError] = useState('')
   const [progress, setProgress] = useState([])
   const requestId = useRef(null)
+  const progressRevision = useRef(0)
+
+  const prepareHistory = async (gameId, revision) => {
+    const update = event => {
+      if (progressRevision.current === revision) {
+        setProgress(events => updateProgress(events, { component: 'summarizer', ...event }))
+      }
+    }
+    update({ status: 'started', reason: 'Preparing context for the next turn.' })
+    try {
+      const response = await fetchAPI('/game/prepare', {
+        method: 'POST', credentials: 'include', body: JSON.stringify({ game_id: gameId }),
+      })
+      update({ status: response.prepared ? 'completed' : 'skipped',
+        response, reason: response.reason || 'Next-turn context is ready.' })
+    } catch (err) {
+      update({ status: 'failed', error: err.message })
+    }
+  }
 
   const loadGame = useCallback(async () => {
     setLoading(true)
@@ -54,6 +74,7 @@ function GamePage() {
     setSubmitting(true)
     setError('')
     setProgress([])
+    const revision = ++progressRevision.current
     requestId.current ||= crypto.randomUUID()
     try {
       const data = await streamGameTurn({
@@ -62,12 +83,12 @@ function GamePage() {
         request_id: requestId.current,
       }, event => {
         if (event.component === 'comparator' && event.llm === false) return
-        setProgress(events => [...events, event])
+        setProgress(events => updateProgress(events, event))
       })
       setGame(data.game)
       setAction('')
       requestId.current = null
-      setProgress(events => [...events, {
+      setProgress(events => finishProgress(updateProgress(events, {
         component: 'turn',
         status: 'saved',
         response: {
@@ -77,9 +98,11 @@ function GamePage() {
           ),
           movement_outcome: data.turn.movement_outcome,
         },
-      }])
+      })))
+      void prepareHistory(data.game.id, revision)
     } catch (err) {
       setError(err.message)
+      setProgress(events => finishProgress(events, err.message))
     } finally {
       setSubmitting(false)
     }
@@ -93,6 +116,7 @@ function GamePage() {
       setGame(data.game)
       setAction('')
       setProgress([])
+      progressRevision.current += 1
       requestId.current = null
     } catch (err) {
       setError(err.message)
@@ -142,9 +166,10 @@ function GamePage() {
           {progress.length > 0 && <section className={styles.progress} aria-label="Turn progress">
             <h3>Turn progress</h3>
             <p>Intermediate responses are debug information, not committed game state.</p>
-            <ol role="log" aria-live="polite" aria-relevant="additions">
+            <ol role="log" aria-live="polite" aria-relevant="additions text">
               {progress.map((event, index) => (
-                <li key={index}>
+                <li key={index} aria-busy={isProgressPending(event)}>
+                  {isProgressPending(event) && <span className={styles.spinner} aria-hidden="true" />}
                   <strong>{({
                     inventory: 'Inventory manager', map: 'Movement intent', npcs: 'NPC manager',
                     movement_resolver: 'Movement resolver',
@@ -154,30 +179,24 @@ function GamePage() {
                   {' — '}{event.status}{event.attempt ? ` (attempt ${event.attempt})` : ''}
                   {event.provider && <small>{' '}{event.provider}/{event.model}</small>}
                   {event.reason && <p>{event.reason}</p>}
-                  {event.request && <details open={
-                    event.component === 'comparator' || event.component === 'narrator'
-                  }>
+                  {event.request && <details>
                     <summary>Request debug details</summary>
                     <pre>{JSON.stringify(event.request, null, 2)}</pre>
                   </details>}
-                  {event.proposed_entity && <pre>{JSON.stringify({
+                  {event.proposed_entity && <details>
+                    <summary>Proposed entity</summary>
+                    <pre>{JSON.stringify({
                     entity_type: event.entity_type,
                     proposed_entity: event.proposed_entity,
-                  }, null, 2)}</pre>}
-                  {event.matched_entity && <pre>{JSON.stringify({
-                    matched_entity: event.matched_entity,
-                  }, null, 2)}</pre>}
-                  {event.response && <pre>{event.response.narration
-                    || JSON.stringify(event.response, null, 2)}</pre>}
-                  {event.component === 'narrator' && event.response && <details open>
-                    <summary>Resolved turn debug details</summary>
+                  }, null, 2)}</pre></details>}
+                  {event.matched_entity && <details>
+                    <summary>Matched entity</summary>
                     <pre>{JSON.stringify({
-                      action_succeeded: event.response.action_succeeded,
-                      game_over: event.response.game_over,
-                      notable_elements: event.response.notable_elements,
-                      movement_outcome: event.response.movement_outcome,
-                      movement_resolution: event.response.movement_resolution,
-                    }, null, 2)}</pre>
+                    matched_entity: event.matched_entity,
+                  }, null, 2)}</pre></details>}
+                  {event.response && <details>
+                    <summary>Response debug details</summary>
+                    <pre>{JSON.stringify(event.response, null, 2)}</pre>
                   </details>}
                   {event.error && <p className={styles.error}>{event.error}</p>}
                 </li>
