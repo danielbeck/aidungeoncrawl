@@ -57,7 +57,8 @@ def _post_json(url, payload, headers=None, timeout=60):
             return json.loads(response.read().decode('utf-8'))
     except urllib.error.HTTPError as error:
         details = error.read().decode('utf-8', errors='replace')
-        raise LLMError(f'Failed to get a response from {url}.', details=details) from error
+        raise LLMError(f'Failed to get a response from {url} (HTTP {error.code}).',
+                       details=details) from error
     except urllib.error.URLError as error:
         raise LLMError(f'Failed to reach {url}.', details=str(error.reason)) from error
 
@@ -103,6 +104,8 @@ def call_openrouter(messages, schema, schema_name, config):
                 'strict': True,
             },
         }
+        # Only route to providers that honor response_format; some free models ignore it.
+        payload['provider'] = {'require_parameters': True}
 
     data = _post_json(
         f"{config['openrouter_url']}/chat/completions",

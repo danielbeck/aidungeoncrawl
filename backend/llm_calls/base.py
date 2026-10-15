@@ -169,9 +169,11 @@ class LLMCall(ABC):
             )
             data = self.validate_response(self.parse_response(raw))
         except (LLMError, ValueError, TypeError, KeyError) as error:
+            details = getattr(error, 'details', None)
             logger.exception(
-                'LLM call %s [%s] failed after %.3fs: %s',
+                'LLM call %s [%s] failed after %.3fs: %s%s',
                 self.name, call_id, time.monotonic() - started, error,
+                f' Details: {str(details)[:2000]}' if details else '',
             )
             raise
         return LLMResult(data=data, raw=raw, provider=result.get('provider'), model=result.get('model'))

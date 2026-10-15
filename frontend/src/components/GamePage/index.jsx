@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { fetchAPI, streamGameTurn } from '../../api'
+import { createRequestId } from '../../requestId'
 import styles from './GamePage.module.scss'
 import { finishProgress, isProgressPending, updateProgress } from './progress'
 
@@ -88,7 +89,7 @@ function GamePage() {
     setError('')
     setProgress([])
     const revision = ++progressRevision.current
-    requestId.current ||= crypto.randomUUID()
+    requestId.current ||= createRequestId()
     try {
       const data = await streamGameTurn({
         action: action.trim(),

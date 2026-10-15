@@ -92,6 +92,9 @@ echo "Installing private account configuration (secrets are not printed)..."
 if ! ACCOUNT_CONFIG=$(node -e '
     const keys = ["SECRET_KEY", "SMTP_HOST", "SMTP_PORT", "SMTP_SECURE", "SMTP_FROM_EMAIL", "SMTP_FROM_NAME", "SMTP_USERNAME", "SMTP_PASSWORD", "LLM_PROVIDER", "OLLAMA_URL", "OLLAMA_MODEL", "OPENROUTER_URL", "OPENROUTER_API_KEY", "OPENROUTER_MODEL"];
     const settings = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+    // LLM_PROVIDER usually targets local Ollama; production needs its own provider.
+    settings.LLM_PROVIDER = process.env.PRODUCTION_LLM_PROVIDER || "openrouter";
+    if (settings.LLM_PROVIDER === "openrouter" && !settings.OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY is required for the production OpenRouter provider.");
     const domain = process.env.PRODUCTION_DOMAIN;
     if (!domain) throw new Error("PRODUCTION_DOMAIN is required.");
     const sub = (process.env.DEPLOY_SUB_DIR || "").replace(/^\/+|\/+$/g, "");

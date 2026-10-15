@@ -286,9 +286,11 @@ class ProviderChatTests(unittest.TestCase):
         with patch.object(llm_provider, '_post_json', return_value=reply) as post:
             llm_provider.chat(self.MESSAGES, config=config)
             self.assertNotIn('response_format', post.call_args[0][1])
+            self.assertNotIn('provider', post.call_args[0][1])
 
             llm_provider.chat(self.MESSAGES, {'type': 'object'}, 'thing', config=config)
             self.assertEqual(post.call_args[0][1]['response_format']['json_schema']['name'], 'thing')
+            self.assertEqual(post.call_args[0][1]['provider'], {'require_parameters': True})
 
     def test_call_llm_still_sends_single_user_message(self):
         config = llm_provider.get_llm_config({'LLM_PROVIDER': 'ollama'})

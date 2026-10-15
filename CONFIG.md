@@ -101,7 +101,8 @@ SMTP settings. For link expiry, password rules, and account behavior, see the
 
 | Variable | Purpose |
 |---|---|
-| `LLM_PROVIDER` | `ollama` or `openrouter`; defaults to Ollama locally and OpenRouter in production. |
+| `LLM_PROVIDER` | Local provider: `ollama` or `openrouter`; defaults to Ollama. Not deployed. |
+| `PRODUCTION_LLM_PROVIDER` | Provider written by `deploy.sh`; defaults to `openrouter`. |
 | `OLLAMA_URL`, `OLLAMA_MODEL` | Local provider endpoint and model. |
 | `OPENROUTER_URL`, `OPENROUTER_MODEL` | OpenRouter endpoint and model. |
 | `OPENROUTER_API_KEY` | Private OpenRouter credential. |
