@@ -58,13 +58,15 @@ function App() {
             ? null
             : user
               ? <GamePage />
-              : <section className="welcome-message" aria-labelledby="welcome-title">
+              : <div><section className="welcome-message" aria-labelledby="welcome-title">
                 <p className="welcome-eyebrow">A tiny text adventure</p>
                 <h2 id="welcome-title">Go on... an adventure!</h2>
                 <Link className="welcome-cta" to="/auth">Let&apos;s play</Link>
-                <p className="welcome-note">Your choices shape the story. The world grows around you.
-                  You gotta create a free account so we have somewhere to store your progress. No spam, promise.</p>
+                <p className="welcome-note">Your choices shape the story. The world grows around you.</p>
+                <p className="welcome-note">You gotta create a free account so we have somewhere to store your progress. No spam, promise.</p>
               </section>
+                <p className="welcome-follower">Note: this is more an experiment in prompt chaining and using limited-power LLMs effectively than it is an actual, functioning game.  I mean, it's kind of fun, but if you really just want to play D&D you'll get a better experience by just asking ChatGPT or one of the other frontier models to roleplay.  Or, y'know, some humans.</p>
+              </div>
           } />
         </Routes>
       </main>

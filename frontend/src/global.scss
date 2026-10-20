@@ -51,6 +51,12 @@ body {
     }
 }
 
+.welcome-follower {
+    max-width: 680px;
+    margin: 64px auto;
+    line-height: 1.5rem;
+}
+
 .welcome-eyebrow {
     color: #286650;
     font-size: 12px;
@@ -92,7 +98,9 @@ h2 {
 }
 
 @media (max-width: 480px) {
-    .welcome-message {
+
+    .welcome-message,
+    .welcome-follower {
         margin: 40px 16px;
         padding: 36px 22px;
     }
