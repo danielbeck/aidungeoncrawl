@@ -30,9 +30,9 @@ from abc import ABC
 from typing import Any, Callable, Dict, List, NamedTuple, Optional
 
 try:
-    from backend.llm_provider import LLMError, chat, try_parse_json_object
+    from backend.harness.llm_provider import LLMError, chat, try_parse_json_object
 except ImportError:
-    from llm_provider import LLMError, chat, try_parse_json_object
+    from harness.llm_provider import LLMError, chat, try_parse_json_object
 
 # <repo>/shared/llm locally; <REMOTE_DIR>/shared/llm when deployed.
 DEFINITIONS_DIR = os.environ.get('LLM_DEFINITIONS_DIR') or os.path.normpath(
@@ -120,7 +120,7 @@ class LLMCall(ABC):
 
     def build_messages(self, user_input: str, history=None) -> List[Message]:
         """`history` is any object exposing `to_messages()` that returns prior
-        {role, content} messages (see `llm_calls.history`)."""
+        {role, content} messages (see `harness.history`)."""
         if not isinstance(user_input, str) or not user_input.strip():
             raise ValueError('user_input must be a non-empty string.')
 

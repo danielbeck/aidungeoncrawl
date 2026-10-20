@@ -15,7 +15,8 @@ It runs as a local Flask server or as CGI on shared hosting.
 | `reset_email.py` | TLS-protected password-reset email. |
 | `game_engine.py` | State, entity identity, and turn orchestration. |
 | `endpoints/` | Account, gameplay, and LLM APIs. |
-| `llm_calls/`, `../shared/llm/` | LLM call implementations and prompt/schema definitions. |
+| `harness/` | Provider adapters and reusable LLM call mechanics. |
+| `llm_calls/`, `../shared/llm/` | Game-specific LLM tasks and prompt/schema definitions. |
 | `config_helper.py` | Legacy environment/config.json deployment helper. |
 | `database/`, `logs/` | Private SQLite data and diagnostic output. |
 

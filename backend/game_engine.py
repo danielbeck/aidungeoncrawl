@@ -8,7 +8,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 try:
-    from backend.llm_provider import LLMError
+    from backend.harness.llm_provider import LLMError
     from backend.llm_calls.gameplay import (
         ComparatorCall,
         InventoryManagerCall,
@@ -19,7 +19,7 @@ try:
         HistorySummarizerCall,
     )
 except ImportError:
-    from llm_provider import LLMError
+    from harness.llm_provider import LLMError
     from llm_calls.gameplay import (
         ComparatorCall,
         InventoryManagerCall,

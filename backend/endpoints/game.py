@@ -9,11 +9,11 @@ from flask import Blueprint, Response, current_app, jsonify, request, session
 
 try:
     from backend.game_engine import InvalidTurnResponse, new_game, process_turn
-    from backend.llm_provider import LLMError
+    from backend.harness.llm_provider import LLMError
     from backend.llm_calls.gameplay import HistorySummarizerCall
 except ImportError:
     from game_engine import InvalidTurnResponse, new_game, process_turn
-    from llm_provider import LLMError
+    from harness.llm_provider import LLMError
     from llm_calls.gameplay import HistorySummarizerCall
 
 

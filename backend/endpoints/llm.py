@@ -2,10 +2,10 @@ from flask import Blueprint, current_app, jsonify, request
 
 try:
     from backend.llm_calls import REGISTRY, LLMResponseError, MessageHistory
-    from backend.llm_provider import LLMError, call_llm, get_llm_config
+    from backend.harness.llm_provider import LLMError, call_llm, get_llm_config
 except ImportError:
     from llm_calls import REGISTRY, LLMResponseError, MessageHistory
-    from llm_provider import LLMError, call_llm, get_llm_config
+    from harness.llm_provider import LLMError, call_llm, get_llm_config
 
 bp = Blueprint('llm', __name__, url_prefix='/llm')
 

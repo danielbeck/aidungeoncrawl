@@ -2,9 +2,9 @@
 import logging
 
 try:
-    from backend.llm_calls.base import LLMCall, LLMResponseError
+    from backend.harness.llm_calls import LLMCall, LLMResponseError
 except ImportError:
-    from llm_calls.base import LLMCall, LLMResponseError
+    from harness.llm_calls import LLMCall, LLMResponseError
 
 
 logger = logging.getLogger(__name__)

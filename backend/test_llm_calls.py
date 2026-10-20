@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from flask import Flask
 
-from backend import llm_provider
+from backend.harness import llm_provider
 from backend.endpoints.llm import bp as llm_bp
 from backend.llm_calls import (
     REGISTRY, InventoryManagerCall, LLMCall, LLMResponseError, MapManagerCall,
@@ -104,7 +104,7 @@ class LLMCallTests(unittest.TestCase):
 
     def test_logs_start_and_raw_response_before_validation_failure(self):
         call = REGISTRY['comparator'](transport=FakeTransport('not valid JSON'))
-        with self.assertLogs('backend.llm_calls.base', level='INFO') as logs:
+        with self.assertLogs('backend.harness.llm_calls', level='INFO') as logs:
             with self.assertRaises(LLMResponseError):
                 call.run('an identical item')
         self.assertIn('started', logs.output[0])
@@ -120,7 +120,7 @@ class LLMCallTests(unittest.TestCase):
         def transport(messages, schema, schema_name):
             raise error
 
-        with self.assertLogs('backend.llm_calls.base', level='INFO') as logs:
+        with self.assertLogs('backend.harness.llm_calls', level='INFO') as logs:
             with self.assertRaises(llm_provider.LLMError) as raised:
                 EchoCall(transport=transport).run('hello')
         self.assertIs(raised.exception, error)
@@ -130,7 +130,7 @@ class LLMCallTests(unittest.TestCase):
 
     def test_success_logs_share_a_call_id_and_mark_truncated_responses(self):
         raw = 'x' * 32769
-        with self.assertLogs('backend.llm_calls.base', level='INFO') as logs:
+        with self.assertLogs('backend.harness.llm_calls', level='INFO') as logs:
             result = EchoCall(transport=FakeTransport(raw)).run('hello')
         self.assertEqual(result.raw, raw)
         self.assertEqual(result.data, raw)
@@ -168,18 +168,18 @@ class LLMCallTests(unittest.TestCase):
         self.assertEqual(QuietSchemaCall(transport=FakeTransport('')).build_system_prompt(), 'Do the thing.')
 
     def test_movement_calls_use_deterministic_sampling_without_changing_other_calls(self):
-        with patch('backend.llm_calls.base.chat', return_value={
+        with patch('backend.harness.llm_calls.chat', return_value={
                 'provider': 'test', 'model': 'test', 'response': '{"movement":false,"target":null}',
         }) as chat:
             MapManagerCall().run('Wait.')
             self.assertEqual(chat.call_args[1]['temperature'], 0)
-        with patch('backend.llm_calls.base.chat', return_value={
+        with patch('backend.harness.llm_calls.chat', return_value={
                 'provider': 'test', 'model': 'test',
                 'response': '{"destination":null,"clarification":"Which place?"}',
         }) as chat:
             MovementResolverCall().run('Go there.')
             self.assertEqual(chat.call_args[1]['temperature'], 0)
-        with patch('backend.llm_calls.base.chat', return_value={
+        with patch('backend.harness.llm_calls.chat', return_value={
                 'provider': 'test', 'model': 'test', 'response': 'Hello',
         }) as chat:
             EchoCall().run('Hello')
@@ -326,7 +326,7 @@ class RunCallEndpointTests(unittest.TestCase):
         app.register_blueprint(llm_bp)
         self.client = app.test_client()
 
-        self.chat_patch = patch('backend.llm_calls.base.chat')
+        self.chat_patch = patch('backend.harness.llm_calls.chat')
         self.chat = self.chat_patch.start()
         self.addCleanup(self.chat_patch.stop)
         result = {'same_entity': True}

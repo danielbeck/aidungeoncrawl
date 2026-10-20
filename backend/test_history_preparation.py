@@ -10,7 +10,7 @@ from flask import Flask
 
 from backend.endpoints.game import bp
 from backend.game_engine import new_game
-from backend.llm_provider import LLMError
+from backend.harness.llm_provider import LLMError
 
 
 class HistoryPreparationTests(unittest.TestCase):

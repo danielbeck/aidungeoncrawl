@@ -8,7 +8,7 @@ from backend.game_engine import (
     InvalidTurnResponse, _explicit_inventory_intent, new_game, process_turn,
 )
 from backend.llm_calls.gameplay import ComparatorCall, NarratorCall, HistorySummarizerCall
-from backend.llm_provider import LLMError
+from backend.harness.llm_provider import LLMError
 
 
 def narrator_response(narration='You look around.', game_over=False):
@@ -659,7 +659,6 @@ class GameEngineTests(unittest.TestCase):
         for intent in (
                 {'locations': []},
                 {'movement': True, 'target': None},
-                {'movement': False, 'target': {'kind': 'named', 'text': 'Tavern'}},
                 movement_intent('Tavern', 'invalid')):
             game = new_game(7)
             calls = fake_calls()

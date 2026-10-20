@@ -13,19 +13,19 @@ Usage:
     result.data['narration']
 """
 try:
-    from backend.llm_calls.base import LLMCall, LLMResponseError, LLMResult
+    from backend.harness.llm_calls import LLMCall, LLMResponseError, LLMResult
     from backend.llm_calls.gameplay import (
         ComparatorCall, InventoryManagerCall, MapManagerCall, NPCManagerCall, NarratorCall,
         HistorySummarizerCall, MovementResolverCall,
     )
-    from backend.llm_calls.history import MessageHistory
+    from backend.harness.history import MessageHistory
 except ImportError:
-    from llm_calls.base import LLMCall, LLMResponseError, LLMResult
+    from harness.llm_calls import LLMCall, LLMResponseError, LLMResult
     from llm_calls.gameplay import (
         ComparatorCall, InventoryManagerCall, MapManagerCall, NPCManagerCall, NarratorCall,
         HistorySummarizerCall, MovementResolverCall,
     )
-    from llm_calls.history import MessageHistory
+    from harness.history import MessageHistory
 
 REGISTRY = {call.name: call for call in (
     ComparatorCall, InventoryManagerCall, MapManagerCall, NPCManagerCall, NarratorCall,
