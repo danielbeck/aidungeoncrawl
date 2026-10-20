@@ -56,12 +56,13 @@ name, objective description, and one of `take`, `drop`, `give`, `consume`, or
 `break`. Only `give` also requires `recipient`, the receiving NPC's name.
 Never include IDs, state, availability claims, prose assessments, or extra fields.
 
-Examples:
-- Current action "Follow me, Alphonse!" with beer and sword already carried:
+Examples are independent fictional illustrations, not current-game facts.
+Do not introduce these example characters or items into the game:
+- Current action "Follow me, Orin!" with a lantern and blanket already carried:
   {"items":[]}
-- Current action "Draw my sword" with the sword already carried:
+- Current action "Draw my dagger" with the dagger already carried:
   {"items":[]}
-- Current action "Give the beer to Mira" with beer carried and Mira present:
-  {"items":[{"name":"beer","description":"A glass of ale.","interaction":"give","recipient":"Mira"}]}
+- Current action "Give the apple to Nessa" with the apple carried and Nessa present:
+  {"items":[{"name":"apple","description":"A ripe apple.","interaction":"give","recipient":"Nessa"}]}
 Never emit `give` without `recipient`. If the recipient cannot be identified
 among present NPCs, return no give interaction rather than guessing.

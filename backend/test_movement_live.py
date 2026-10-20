@@ -46,6 +46,40 @@ class LiveMovementTests(unittest.TestCase):
         self.assertEqual(game['currentLocationId'], wilderness_id)
         self.assertEqual(len(game['world']['locations']), 3)
 
+    def test_comparator_valid_and_invalid_identity_matches(self):
+        cases = (
+            ('locations', ('into the tavern', 'A place known as into the tavern.'),
+             ('the tavern', 'A place known as the tavern.'), True),
+            ('locations', ('Forest Trail', 'A trail north of the clearing.'),
+             ('the tavern', 'A place known as the tavern.'), False),
+            ('locations', ('Town Square Outside the Tavern', 'The town square outside the tavern.'),
+             ('Tavern', 'A cozy town tavern.'), False),
+            ('locations', ('Tavern Cellar', 'Storage beneath the tavern.'),
+             ('Tavern Main Room', 'The public room with the bar.'), False),
+            ('items', ('mug of beer', 'A mug filled with ale.'),
+             ('mug', 'A glass of ale.'), True),
+            ('items', ('Iron key', 'A small iron key.'),
+             ('the iron key', 'A small key made of iron.'), True),
+            ('items', ('Iron key', 'A small iron key.'),
+             ('Brass key', 'A small brass key.'), False),
+            ('npcs', ('Mira', 'The tavern keeper.'),
+             ('the barkeep', 'Mira, who runs the tavern.'), True),
+            ('npcs', ('Mira', 'The tavern keeper.'),
+             ("Mira's sword", 'A steel sword belonging to Mira.'), False),
+            ('locations', ('Woodland Path', 'A narrow footpath among the trees.'),
+             ('forest trail', 'The narrow path through the woods.'), True),
+            ('items', ('Red mug', 'A red mug containing beer.'),
+             ('Blue mug', 'A blue mug containing beer.'), False),
+        )
+        for entity_type, candidate, proposed, expected in cases:
+            with self.subTest(candidate=candidate[0], proposed=proposed[0]):
+                result = self.calls['comparator'].run(json.dumps({
+                    'entity_type': entity_type,
+                    'candidate_entity': dict(zip(('name', 'description'), candidate)),
+                    'proposed_entity': dict(zip(('name', 'description'), proposed)),
+                }))
+                self.assertEqual(result.data, {'same_entity': expected})
+
     def test_named_paraphrases_and_non_movement(self):
         for action, kind, text in (
                 ('I stroll through the door into the tavern.', 'named', 'tavern'),

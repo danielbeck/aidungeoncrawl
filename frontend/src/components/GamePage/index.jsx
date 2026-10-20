@@ -96,7 +96,8 @@ function GamePage() {
         game_id: game.id,
         request_id: requestId.current,
       }, event => {
-        if (event.component === 'comparator' && event.llm === false) return
+        if (event.component === 'comparator' && event.llm === false
+          && event.status !== 'started' && event.status !== 'failed') return
         setProgress(events => updateProgress(events, event))
       })
       setGame(data.game)

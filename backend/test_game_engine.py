@@ -1349,6 +1349,36 @@ class GameEngineTests(unittest.TestCase):
             self.assertEqual(match['response'], {'same_entity': True})
             self.assertIn('no LLM call needed', match['reason'])
 
+    def test_location_ambiguity_debug_identifies_all_matches(self):
+        game = new_game(7)
+        locations = [
+            {'id': 'tavern', 'name': 'into the tavern',
+             'description': 'A place known as into the tavern.', 'exits': []},
+            {'id': 'forest', 'name': 'Forest Trail',
+             'description': 'A trail north of the clearing.', 'exits': []},
+        ]
+        game['world']['locations'].extend(locations)
+        calls = fake_calls()
+        calls['map'].data = movement_intent('the tavern')
+        calls['comparator'] = FakeCall({'same_entity': True})
+        events = []
+        original = copy.deepcopy(game)
+        with self.assertRaisesRegex(InvalidTurnResponse, 'multiple candidates matched'):
+            process_turn(game, 'Enter the tavern.', calls, on_progress=events.append)
+        self.assertEqual(game, original)
+        comparator_events = [event for event in events if event['component'] == 'comparator']
+        self.assertEqual(comparator_events[-2]['status'], 'started')
+        self.assertEqual(comparator_events[-2]['request'], {
+            'entity_type': 'locations',
+            'proposed_entity': {'name': 'the tavern',
+                                'description': 'A place known as the tavern.'},
+        })
+        self.assertEqual(comparator_events[-1]['status'], 'failed')
+        self.assertEqual(comparator_events[-1]['response']['matched_entities'], [
+            {key: location[key] for key in ('name', 'description')}
+            for location in locations
+        ])
+
     def test_multiple_exact_matches_are_ambiguous(self):
         game = new_game(7)
         for item_id in ('beer-first', 'beer-second'):
@@ -1362,10 +1392,17 @@ class GameEngineTests(unittest.TestCase):
             'locations': [], 'npcs': [],
         })
         original = copy.deepcopy(game)
+        events = []
         with self.assertRaisesRegex(InvalidTurnResponse, 'multiple exact matches'):
-            process_turn(game, 'Take the beer.', calls)
+            process_turn(game, 'Take the beer.', calls, on_progress=events.append)
         self.assertEqual(game, original)
         self.assertEqual(calls['comparator'].inputs, [])
+        failed = next(event for event in events
+                      if event['component'] == 'comparator' and event['status'] == 'failed')
+        self.assertEqual(failed['response']['matched_entities'], [
+            {'name': 'beer', 'description': 'A beer'},
+            {'name': 'beer', 'description': 'A beer'},
+        ])
 
     def test_generous_text_matching_preserves_canonical_item(self):
         for name, description in (

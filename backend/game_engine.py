@@ -183,7 +183,13 @@ def _resolve_entity(state, collection_name, proposed, comparator, current_locati
         ]
         if len(exact_matches) > 1:
             error = f'Ambiguous {collection_name} identity: multiple exact matches.'
-            progress('failed', llm=False, error=error, proposed_entity=_display_entity(proposed))
+            progress('started', llm=False, request={
+                'entity_type': collection_name,
+                'proposed_entity': _display_entity(proposed),
+            })
+            progress('failed', llm=False, error=error, response={
+                'matched_entities': [_display_entity(entity) for entity in exact_matches],
+            })
             raise InvalidTurnResponse(error)
         text_matches = exact_matches or (name_matches if len(name_matches) == 1 else [])
         if len(text_matches) == 1:
@@ -227,7 +233,13 @@ def _resolve_entity(state, collection_name, proposed, comparator, current_locati
                 matches.append(entity)
         if len(matches) > 1:
             error = f'Ambiguous {collection_name} identity: multiple candidates matched.'
-            progress('failed', error=error, proposed_entity=_display_entity(proposed))
+            progress('started', llm=False, request={
+                'entity_type': collection_name,
+                'proposed_entity': _display_entity(proposed),
+            })
+            progress('failed', llm=False, error=error, response={
+                'matched_entities': [_display_entity(entity) for entity in matches],
+            })
             raise InvalidTurnResponse(error)
         if matches:
             return matches[0]

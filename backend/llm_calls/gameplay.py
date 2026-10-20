@@ -147,6 +147,7 @@ class NarratorCall(LLMCall):
 
 class ComparatorCall(LLMCall):
     name = 'comparator'
+    temperature = 0
 
     def validate_response(self, data):
         if (not isinstance(data, dict)

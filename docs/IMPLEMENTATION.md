@@ -133,6 +133,9 @@ effects. `game_over` ends the game for character death.
 Receives `entity_type`, one `candidate_entity`, and `proposed_entity`, using
 natural-language names/descriptions. Returns only `{"same_entity":true}` or
 `{"same_entity":false}`. It does not choose state or perform actions.
+Identity comparisons use temperature zero. The prompt distinguishes aliases and
+compatible shorter names from adjacent places, conflicting materials, and
+owner/possession relationships; shared words or entity type alone are not matches.
 
 Before calling it, code normalizes case, punctuation, spacing, and Unicode:
 - A unique matching name/description, or a unique full name, resolves directly.
@@ -145,6 +148,10 @@ Before calling it, code normalizes case, punctuation, spacing, and Unicode:
   lists skip the call.
 
 Canonical results appear in `turn.reconciled_entities`.
+Ambiguity produces a separate failed comparator debug entry: Request details
+identifies the proposed entity and entity type, and Response lists every
+conflicting match under `matched_entities`. Individual comparison results remain
+in their own entries.
 
 ## Supported state transitions
 
