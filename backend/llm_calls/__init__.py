@@ -1,9 +1,10 @@
 """Typed LLM calls. To add one:
 
-1. Write the prompt in `shared/llm/<name>.md` and, for structured output,
-   the JSON schema in `shared/llm/<name>.json`.
+1. Write the system prompt in `shared/llm/<name>.md`, an optional user-message
+   template in `shared/llm/<name>.input.md`, and, for structured output, the
+   JSON schema in `shared/llm/<name>.json`.
 2. Subclass `LLMCall` with `name = '<name>'` in its own module (override
-   `format_user_input` / `validate_response` as needed).
+   `validate_response` as needed).
 3. Add it to `REGISTRY` below, which exposes it at `POST /llm/calls/<name>`.
 
 The frontend imports schemas via `@shared/llm/<name>.json`.

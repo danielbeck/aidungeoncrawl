@@ -20,8 +20,10 @@ below; broader product goals are distinguished in [Product Spec](PRODUCT_SPEC.md
 
 ## LLM components and contracts
 
-Prompts and optional response schemas live in `shared/llm/`, named after each
-call. [Shared definitions](../shared/README.md) explains loading and deployment.
+System prompts, user-message templates, and optional response schemas live in
+`shared/llm/`, named after each call. A call's `<name>.input.md` template uses
+`{{input}}` where the serialized call input should go.
+[Shared definitions](../shared/README.md) explains loading and deployment.
 
 ### Inventory manager
 
@@ -35,6 +37,14 @@ or "my". Unrelated proposals for those commands are ignored with reasons.
 Compound, conditional, negated, pronoun-based, and unsupported wording is left
 to manager interpretation. Original output is retained; corrections appear in
 effective output and progress.
+
+Carried items persist across location changes and omission from manager output.
+Before applying a proposed drop, code requires disposal wording in the current
+action (drop/discard/abandon, put/place/set, or leave-behind/placement wording).
+This is a conservative wording guard, not a full intent parser; the manager
+still interprets targets, conditions, and negation. Unrequested drops are logged,
+reported as ignored, and excluded from resolved interactions. A requested drop
+combined with travel leaves the item in the starting location.
 
 ### Movement intent and resolution
 
@@ -80,9 +90,11 @@ existing NPC location/status or model motivations.
 
 ### Narrator
 
-Receives the action and summary once each, history-free starting `game_context`
-and resulting `resolved_context`, resolved/ignored interactions, and movement
-outcome/resolution. Returns only:
+Receives the action and summary once each, history-free `resolved_context`,
+resolved/ignored interactions, and movement outcome/resolution. The context
+contains only the resulting current location, its exits, carried items, and local
+NPCs, items, and known objects. No starting-state snapshot or global lists of known
+items, locations, or NPCs are sent. Returns only:
 
 ```json
 {

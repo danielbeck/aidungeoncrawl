@@ -436,6 +436,14 @@ def _apply_inventory_interactions(state, manager_result, comparator, current_loc
     resolved = []
     applied = []
     explicit_intent = _explicit_inventory_intent(action)
+    drop_requested = re.search(
+        r'\bdrop\b(?!\s+(?:by|in|into|down)\b)'
+        r'|\b(?:discard|abandon|put|place)\b'
+        r'|\bset\b(?!\s+(?:off|out|forth)\b)'
+        r'|\bleave\s+behind\b'
+        r'|\bleave\b[^.!?;]*\b(?:behind|here|there|on|at|in|with)\b',
+        action, flags=re.IGNORECASE,
+    ) is not None
     for proposed in items:
         if (not isinstance(proposed, dict)
                 or set(proposed) != {'name', 'description', 'interaction'}
@@ -462,6 +470,14 @@ def _apply_inventory_interactions(state, manager_result, comparator, current_loc
                     on_progress('inventory', 'corrected',
                                 proposed_entity=copy.deepcopy(proposed), reason=reason)
         interaction = proposed['interaction']
+        if interaction == 'drop' and not drop_requested:
+            reason = 'Current action does not request putting down or leaving an item behind.'
+            logger.warning('Ignoring unrequested drop of %s in game %s: %s',
+                           proposed['name'], state['id'], reason)
+            if on_progress is not None:
+                on_progress('inventory', 'ignored', proposed_entity=copy.deepcopy(proposed),
+                            reason=reason)
+            continue
         player_holder = {'type': 'player', 'id': state['playerId']}
         location_holder = {'type': 'location', 'id': current_location_id}
         candidates = []
@@ -647,7 +663,13 @@ def process_turn(state, action, calls=None, settings=None, on_progress=None):
         field: copy.deepcopy(effective_manager_results[manager][field])
         for manager, field in (('inventory', 'items'), ('map', 'locations'), ('npcs', 'npcs'))
     }
-    resolved_context = _context(candidate)
+    resolved_context = {
+        key: value for key, value in _context(candidate).items()
+        if key in (
+            'current_location', 'exits', 'carried_items', 'npcs_here',
+            'items_here', 'objects_here',
+        )
+    }
     movement_outcome = {
         'moved': candidate['currentLocationId'] != state['currentLocationId'],
         'from_location': context['current_location'],
@@ -656,7 +678,6 @@ def process_turn(state, action, calls=None, settings=None, on_progress=None):
     narrator_input = {
         'current_action': action,
         'historical_summary': historical_summary,
-        'game_context': context,
         'resolved_context': resolved_context,
         'movement_outcome': movement_outcome,
         'movement_resolution': movement_resolution,

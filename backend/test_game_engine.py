@@ -343,6 +343,14 @@ class GameEngineTests(unittest.TestCase):
             'id': 'npc-id', 'name': 'Mira', 'description': 'A keeper.',
             'aliases': [], 'currentLocationId': location_id, 'status': 'active', 'state': {},
         })
+        game['world']['locations'].append({
+            'id': 'elsewhere', 'name': 'Distant castle', 'description': 'A faraway castle.',
+            'exits': [],
+        })
+        game['world']['npcs'].append({
+            'id': 'remote-npc', 'name': 'Distant king', 'description': 'A monarch.',
+            'aliases': [], 'currentLocationId': 'elsewhere', 'status': 'active', 'state': {},
+        })
         game['history']['recentEvents'] = [
             {'kind': 'player_action', 'content': 'Old action {}.'.format(index)}
             for index in range(10)
@@ -401,10 +409,17 @@ class GameEngineTests(unittest.TestCase):
         self.assertNotIn('completed_history', narrator_input)
         self.assertEqual(json.loads(calls['summarizer'].inputs[0])['completed_history'],
                          game['history']['recentEvents'])
-        for field in ('game_context', 'resolved_context'):
-            for forbidden in ('action', 'current_action', 'history', 'recent_history',
-                              'completed_history'):
-                self.assertNotIn(forbidden, narrator_input[field])
+        self.assertNotIn('game_context', narrator_input)
+        resolved = narrator_input['resolved_context']
+        self.assertEqual(set(resolved), {
+            'current_location', 'exits', 'carried_items', 'npcs_here',
+            'items_here', 'objects_here',
+        })
+        self.assertEqual([item['name'] for item in resolved['items_here']], ['Iron key'])
+        self.assertEqual([npc['name'] for npc in resolved['npcs_here']], ['Mira'])
+        self.assertEqual([obj['name'] for obj in resolved['objects_here']], ['Stone well'])
+        for remote in ('Distant crown', 'Distant king', 'Distant castle'):
+            self.assertNotIn(remote, json.dumps(narrator_input))
         self.assertNotIn('manager_results', narrator_input)
         self.assertEqual(narrator_input['resolved_interactions'], {
             'items': [], 'locations': [], 'npcs': [],
@@ -446,12 +461,12 @@ class GameEngineTests(unittest.TestCase):
         self.assertEqual(payload['current_action'], action)
         self.assertEqual(payload['historical_summary'], calls['summarizer'].data['summary'])
         self.assertNotIn('completed_history', payload)
-        self.assertEqual(payload['game_context']['current_location']['name'], current['name'])
+        self.assertNotIn('game_context', payload)
         self.assertEqual(payload['resolved_context']['current_location']['name'], 'Great Forest')
-        for context_field in ('game_context', 'resolved_context'):
-            self.assertFalse(contains_key(payload[context_field], 'history'))
-            self.assertFalse(contains_key(payload[context_field], 'completed_history'))
-            self.assertFalse(contains_key(payload[context_field], 'action'))
+        self.assertEqual(payload['movement_outcome']['from_location']['name'], current['name'])
+        self.assertFalse(contains_key(payload['resolved_context'], 'history'))
+        self.assertFalse(contains_key(payload['resolved_context'], 'completed_history'))
+        self.assertFalse(contains_key(payload['resolved_context'], 'action'))
         self.assertEqual(updated['history']['recentEvents'][:-2], previous)
         self.assertEqual(updated['history']['recentEvents'][-2]['content'], action)
 
@@ -568,10 +583,11 @@ class GameEngineTests(unittest.TestCase):
         updated, result = process_turn(game, 'Take the key.', calls)
 
         context = json.loads(calls['narrator'].inputs[0])
-        self.assertEqual(context['game_context']['carried_items'], [])
+        self.assertNotIn('game_context', context)
         self.assertEqual(context['resolved_context']['carried_items'], [
             {'name': 'Key', 'description': 'An iron key.'},
         ])
+        self.assertEqual(context['resolved_context']['items_here'], [])
         self.assertEqual(context['resolved_interactions'], result['notable_elements'])
         self.assertEqual(updated['world']['items'][0]['holder'],
                          {'type': 'player', 'id': game['playerId']})
@@ -847,6 +863,60 @@ class GameEngineTests(unittest.TestCase):
             {entity['id'] for entity in result['reconciled_entities']['items']},
             {key['id'], coin['id'], ring['id']},
         )
+
+    def test_travel_preserves_carried_items_despite_unrequested_drop(self):
+        for action in ('Go back outside.', 'Leave the tavern.', 'Head north.',
+                       'Enter the forest.', 'Look around.', 'Set off north.',
+                       'Drop by the tavern.'):
+            for proposed_drop in (False, True):
+                with self.subTest(action=action, proposed_drop=proposed_drop):
+                    game = new_game(7)
+                    beer = {
+                        'id': 'beer', 'name': 'beer', 'description': 'A glass of ale.',
+                        'status': 'available',
+                        'holder': {'type': 'player', 'id': game['playerId']},
+                    }
+                    game['world']['items'].append(beer)
+                    calls = fake_calls()
+                    calls['map'].data = movement_intent('Forest')
+                    if proposed_drop:
+                        calls['inventory'].data = {'items': [
+                            {**{key: beer[key] for key in ('name', 'description')},
+                             'interaction': 'drop'},
+                        ]}
+                    updated, result = process_turn(game, action, calls)
+                    self.assertNotEqual(updated['currentLocationId'], game['currentLocationId'])
+                    self.assertEqual(updated['world']['items'], [beer])
+                    self.assertEqual(result['notable_elements']['items'], [])
+                    narrator = json.loads(calls['narrator'].inputs[0])
+                    self.assertEqual(narrator['resolved_context']['carried_items'], [
+                        {'name': 'beer', 'description': 'A glass of ale.'},
+                    ])
+                    self.assertEqual(len(result['ignored_interactions']), int(proposed_drop))
+
+    def test_requested_drop_with_travel_leaves_item_in_starting_location(self):
+        for action in ('Drop the beer and head north.', 'Put the beer down and go outside.',
+                       'Leave the beer behind and enter the forest.',
+                       'Set the beer on the table, then go outside.'):
+            with self.subTest(action=action):
+                game = new_game(7)
+                game['world']['items'].append({
+                    'id': 'beer', 'name': 'beer', 'description': 'A glass of ale.',
+                    'status': 'available',
+                    'holder': {'type': 'player', 'id': game['playerId']},
+                })
+                calls = fake_calls()
+                calls['map'].data = movement_intent('Forest')
+                calls['inventory'].data = {'items': [
+                    {'name': 'beer', 'description': 'A glass of ale.', 'interaction': 'drop'},
+                ]}
+                updated, result = process_turn(game, action, calls)
+                self.assertEqual(updated['world']['items'][0]['holder'],
+                                 {'type': 'location', 'id': game['currentLocationId']})
+                self.assertTrue(result['movement_outcome']['moved'])
+                self.assertEqual(result['notable_elements']['items'][0]['interaction'], 'drop')
+                narrator = json.loads(calls['narrator'].inputs[0])
+                self.assertEqual(narrator['resolved_context']['carried_items'], [])
 
     def test_inventory_ignores_drop_without_carried_match(self):
         game = new_game(7)

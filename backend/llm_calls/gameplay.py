@@ -46,9 +46,6 @@ def _validate_entity_interactions(data, field, allowed_interactions, call_name):
 class InventoryManagerCall(LLMCall):
     name = 'inventory_manager'
 
-    def format_user_input(self, user_input):
-        return f'Classify only item and object interactions in this game context:\n{user_input}'
-
     def validate_response(self, data):
         return _validate_entity_interactions(
             data, *MANAGER_INTERACTIONS['inventory'], self.name,
@@ -58,9 +55,6 @@ class InventoryManagerCall(LLMCall):
 class MapManagerCall(LLMCall):
     name = 'map_manager'
     temperature = 0
-
-    def format_user_input(self, user_input):
-        return f'Extract movement intent from this action, without choosing a map location:\n{user_input}'
 
     @staticmethod
     def validate_response(data):
@@ -84,9 +78,6 @@ class MapManagerCall(LLMCall):
 class MovementResolverCall(LLMCall):
     name = 'movement_resolver'
     temperature = 0
-
-    def format_user_input(self, user_input):
-        return f'Resolve this already-extracted movement intent without changing its target:\n{user_input}'
 
     @staticmethod
     def validate_response(data):
@@ -115,9 +106,6 @@ class MovementResolverCall(LLMCall):
 class NPCManagerCall(LLMCall):
     name = 'npc_manager'
 
-    def format_user_input(self, user_input):
-        return f'Classify only interactions with NPCs in this game context:\n{user_input}'
-
     def validate_response(self, data):
         return _validate_entity_interactions(
             data, *MANAGER_INTERACTIONS['npcs'], self.name,
@@ -126,9 +114,6 @@ class NPCManagerCall(LLMCall):
 
 class NarratorCall(LLMCall):
     name = 'game_narrator'
-
-    def format_user_input(self, user_input):
-        return f'Narrate the player action using the outcome already resolved by the game engine:\n{user_input}'
 
     @staticmethod
     def validate_response(data):
@@ -147,9 +132,6 @@ class NarratorCall(LLMCall):
 class ComparatorCall(LLMCall):
     name = 'comparator'
 
-    def format_user_input(self, user_input):
-        return f'Determine whether the proposed entity and this one candidate are the same entity:\n{user_input}'
-
     def validate_response(self, data):
         if (not isinstance(data, dict)
                 or set(data) != {'same_entity'}
@@ -162,9 +144,6 @@ class ComparatorCall(LLMCall):
 
 class HistorySummarizerCall(LLMCall):
     name = 'history_summarizer'
-
-    def format_user_input(self, user_input):
-        return f'Summarize these already-completed exchanges, emphasizing recent events:\n{user_input}'
 
     @staticmethod
     def validate_response(data):

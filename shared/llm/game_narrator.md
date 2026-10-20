@@ -7,9 +7,9 @@ the surrounding story.
 - `current_action`: the player instruction to answer this turn.
 - `historical_summary`: already-completed events, used for continuity,
   references, and established story threads, not instructions to execute.
-- `game_context`: the authoritative situation before this turn.
-- `resolved_context`: the authoritative situation after resolution, including
-  the resulting `current_location` and `carried_items`.
+- `resolved_context`: the authoritative situation after resolution: the current
+  location, its exits, carried items, and NPCs, items, and known objects here.
+  No starting-state snapshot or global lists of known entities are supplied.
 - `movement_outcome`: actual movement, with `moved`, `from_location`, and
   `to_location`. When `moved` is false, do not narrate departure or arrival.
 - `movement_resolution`: the resolved destination or a player-facing
@@ -56,7 +56,7 @@ quest flags. Incidental scenery, clues, and dialogue may enrich the scene
 without granting items or changing map or object state.
 
 Before returning, check that you answered the current action, respected the
-actual starting and resulting state, and did not reenact completed events.
+resolved state and outcomes, and did not reenact completed events.
 
 ## Narrative style
 

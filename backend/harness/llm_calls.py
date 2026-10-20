@@ -6,6 +6,8 @@ prompt and schema live next to each other as plain files in the top-level
 shared with the frontend:
 
 * `shared/llm/<name>.md`    - required; the hardcoded system prompt
+* `shared/llm/<name>.input.md` - optional; the user-message template, with
+                                  `{{input}}` marking where input is inserted
 * `shared/llm/<name>.json`  - optional JSON schema (`response_format`); when
                               present, it is sent to the provider as a
                               structured-output constraint, appended to the
@@ -13,8 +15,9 @@ shared with the frontend:
                               and the response is parsed and validated as
                               JSON. Otherwise raw text is returned
 
-Subclasses may override `format_user_input` to template the user's input and
-`validate_response` to add semantic checks beyond the schema.
+Calls can define their user-message template in the optional `.input.md` file.
+Subclasses may override `validate_response` to add semantic checks beyond the
+schema.
 
 The network layer is injected as a `transport` callable, so tests can swap in
 a fake without patching modules:
@@ -72,13 +75,13 @@ class LLMCall(ABC):
     def __init__(self, transport: Optional[Transport] = None, settings: Optional[dict] = None):
         if not self.name:
             raise TypeError(f'{type(self).__name__} must define `name`.')
-        self.system_prompt, self.response_format = self.load_definition()
+        self.system_prompt, self.response_format, self.user_input_template = self.load_definition()
         self._transport = transport or default_transport(settings, self.temperature)
 
     @classmethod
     def load_definition(cls):
-        """Read and cache `(system_prompt, response_format)` from
-        `<definitions_dir>/<name>.md` and the optional `<name>.json`."""
+        """Read and cache the system prompt, input template, and schema
+        associated with this call."""
         cache_key = (cls.definitions_dir, cls.name)
         cached = cls.__dict__.get('_definition_cache')
         if cached and cached[0] == cache_key:
@@ -100,7 +103,16 @@ class LLMCall(ABC):
             if not isinstance(response_format, dict):
                 raise TypeError(f'{cls.__name__}: {base_path}.json must contain a JSON object.')
 
-        definition = (system_prompt, response_format)
+        user_input_template = None
+        input_path = f'{base_path}.input.md'
+        if os.path.exists(input_path):
+            with open(input_path, encoding='utf-8') as input_file:
+                user_input_template = input_file.read().strip()
+            if user_input_template.count('{{input}}') != 1:
+                raise TypeError(
+                    f'{cls.__name__}: {input_path} must contain exactly one {{{{input}}}} placeholder.')
+
+        definition = (system_prompt, response_format, user_input_template)
         cls._definition_cache = (cache_key, definition)
         return definition
 
@@ -116,7 +128,9 @@ class LLMCall(ABC):
         return f'{prompt}\n\nRespond only with a JSON object matching this JSON schema:\n{schema}'
 
     def format_user_input(self, user_input: str) -> str:
-        return user_input.strip()
+        if self.user_input_template is None:
+            return user_input.strip()
+        return self.user_input_template.replace('{{input}}', user_input)
 
     def build_messages(self, user_input: str, history=None) -> List[Message]:
         """`history` is any object exposing `to_messages()` that returns prior

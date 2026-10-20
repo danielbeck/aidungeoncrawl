@@ -18,13 +18,16 @@ TEST_DEFINITIONS_DIR = tempfile.mkdtemp()
 SCHEMA = {'type': 'object', 'properties': {'x': {'type': 'string'}}}
 
 
-def write_definition(name, prompt=None, schema=None):
+def write_definition(name, prompt=None, schema=None, input_template=None):
     if prompt is not None:
         with open(os.path.join(TEST_DEFINITIONS_DIR, f'{name}.md'), 'w') as prompt_file:
             prompt_file.write(prompt)
     if schema is not None:
         with open(os.path.join(TEST_DEFINITIONS_DIR, f'{name}.json'), 'w') as schema_file:
             json.dump(schema, schema_file)
+    if input_template is not None:
+        with open(os.path.join(TEST_DEFINITIONS_DIR, f'{name}.input.md'), 'w') as input_file:
+            input_file.write(input_template)
 
 
 def setUpModule():
@@ -32,6 +35,8 @@ def setUpModule():
     write_definition('schema_call', '  Do the thing.  ', SCHEMA)
     write_definition('empty', '   ')
     write_definition('bad_schema', 'Prompt', ['not', 'an', 'object'])
+    write_definition('templated', 'Prompt', input_template='Input: {{input}}')
+    write_definition('bad_input_template', 'Prompt', input_template='Input: {input}')
 
 
 def tearDownModule():
@@ -48,6 +53,10 @@ class EchoCall(TestCall):
 
 class SchemaCall(TestCall):
     name = 'schema_call'
+
+
+class TemplatedCall(TestCall):
+    name = 'templated'
 
 
 class FakeTransport:
@@ -78,6 +87,11 @@ class LLMCallTests(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, 'JSON object'):
             call_class(transport=FakeTransport(''))
 
+    def test_input_template_must_contain_one_input_placeholder(self):
+        call_class = type('Call', (TestCall,), {'name': 'bad_input_template'})
+        with self.assertRaisesRegex(TypeError, 'exactly one'):
+            call_class(transport=FakeTransport(''))
+
     def test_loads_prompt_and_optional_schema_from_files(self):
         echo = EchoCall(transport=FakeTransport(''))
         self.assertEqual(echo.system_prompt, 'Repeat the input.')
@@ -88,7 +102,12 @@ class LLMCallTests(unittest.TestCase):
         for name, call_class in REGISTRY.items():
             with self.subTest(name=name):
                 self.assertEqual(call_class.name, name)
-                call_class(transport=FakeTransport(''))
+                self.assertIsNotNone(call_class(transport=FakeTransport('')).user_input_template)
+
+    def test_user_input_template_preserves_input(self):
+        messages = TemplatedCall(transport=FakeTransport('')).build_messages('  hello  ')
+
+        self.assertEqual(messages[-1], {'role': 'user', 'content': 'Input:   hello  '})
 
     def test_rejects_empty_input(self):
         with self.assertRaises(ValueError):

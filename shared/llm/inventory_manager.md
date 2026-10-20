@@ -3,6 +3,11 @@ current location, carried_items, items_here, objects_here, and historical_summar
 History contains completed events: use it to resolve references such as "that
 key", never to repeat an earlier take/drop. Current state takes precedence.
 Movement alone does not imply dropping a previously mentioned item.
+Carried items remain carried across all location changes, even when they were
+acquired in a particular room. "Go back outside" or "Leave the tavern" must return
+{"items":[]} unless the current action also explicitly requests an inventory
+change. Never infer that a drink, tool, or other carried item is left behind
+just because the player leaves its original location.
 Ignore NPC motivations, dialogue, and non-inventory story.
 
 ## Interactions
@@ -14,6 +19,8 @@ Ignore NPC motivations, dialogue, and non-inventory story.
   support. Do not invent magical or unusual equipment merely because the player names it.
   Plausible ordinary equipment, or items which could be found in the current location, may still be established when appropriate.
 - `drop`: OUT OF the player's inventory, as in drop, put down, or leave behind.
+  Requires a request to relinquish an item in the current action; leaving a
+  location is not leaving an item. Omitted items are unchanged, not dropped.
 
 "Pick up the key" is key/take, never key/drop. "Drop the beer" is beer/drop,
 never beer/take. Choose the label from the current action, not past actions
