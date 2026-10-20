@@ -5,7 +5,7 @@ import unittest
 from types import SimpleNamespace
 
 from backend.game_engine import (
-    InvalidTurnResponse, _explicit_inventory_intent, new_game, process_turn,
+    InvalidTurnResponse, _explicit_inventory_intent, _resolve_entity, new_game, process_turn,
 )
 from backend.llm_calls.gameplay import (
     ComparatorCall, InventoryManagerCall, NarratorCall, HistorySummarizerCall,
@@ -80,6 +80,81 @@ def contains_key(value, key):
 
 
 class GameEngineTests(unittest.TestCase):
+    def test_confirmed_alias_is_learned_and_reused_without_comparator(self):
+        for collection in ('items', 'locations', 'npcs'):
+            with self.subTest(collection=collection):
+                game = new_game(7)
+                entity = {'id': 'canonical', 'name': 'Original name', 'description': 'A thing.'}
+                game['world'][collection] = [entity]
+                comparator = FakeCall({'same_entity': True})
+                proposal = {'name': 'Alternate name', 'description': 'The same thing.'}
+                matched = _resolve_entity(
+                    game, collection, proposal, comparator, game['currentLocationId'])
+                self.assertIs(matched, entity)
+                self.assertEqual(entity['aliases'], ['Alternate name'])
+                comparator.inputs.clear()
+                matched = _resolve_entity(
+                    game, collection, {**proposal, 'name': ' ALTERNATE-name! '},
+                    comparator, game['currentLocationId'])
+                self.assertIs(matched, entity)
+                self.assertEqual(comparator.inputs, [])
+                self.assertEqual(entity['aliases'], ['Alternate name'])
+                self.assertEqual(entity['name'], 'Original name')
+
+    def test_alias_collision_uses_comparator_and_exposes_aliases(self):
+        game = new_game(7)
+        first = {'id': 'first', 'name': 'Iron key', 'description': 'Iron.',
+                 'aliases': ['old key']}
+        second = {'id': 'second', 'name': 'Brass key', 'description': 'Brass.',
+                  'aliases': ['old key']}
+        game['world']['items'] = [first, second]
+
+        class SelectIron(FakeCall):
+            def run(self, user_input):
+                self.inputs.append(user_input)
+                return SimpleNamespace(
+                    data={'same_entity': json.loads(user_input)['candidate_entity']['name']
+                          == 'Iron key'}, provider='test', model='test')
+
+        comparator = SelectIron({})
+        result = _resolve_entity(
+            game, 'items', {'name': 'old key', 'description': 'Iron.'},
+            comparator, game['currentLocationId'])
+        self.assertIs(result, first)
+        self.assertEqual(len(comparator.inputs), 2)
+        for request in comparator.inputs:
+            self.assertEqual(json.loads(request)['candidate_entity']['aliases'], ['old key'])
+
+    def test_ambiguous_matches_do_not_learn_aliases(self):
+        game = new_game(7)
+        game['world']['items'] = [
+            {'id': 'one', 'name': 'Iron key', 'description': 'Iron.'},
+            {'id': 'two', 'name': 'Brass key', 'description': 'Brass.'},
+        ]
+        original = copy.deepcopy(game)
+        with self.assertRaises(InvalidTurnResponse):
+            _resolve_entity(
+                game, 'items', {'name': 'old key', 'description': 'An old key.'},
+                FakeCall({'same_entity': True}), game['currentLocationId'])
+        self.assertEqual(game, original)
+
+    def test_failed_turn_does_not_save_learned_alias(self):
+        game = new_game(7)
+        game['world']['items'].append({
+            'id': 'key', 'name': 'Iron key', 'description': 'Iron.',
+            'status': 'available', 'holder': {'type': 'player', 'id': game['playerId']},
+        })
+        calls = fake_calls({
+            'items': [{'name': 'rusty key', 'description': 'Iron.', 'interaction': 'take'}],
+            'locations': [], 'npcs': [],
+        })
+        calls['comparator'] = FakeCall({'same_entity': True})
+        calls['narrator'].data = {}
+        original = copy.deepcopy(game)
+        with self.assertRaises(LLMError):
+            process_turn(game, 'Inspect my belongings.', calls)
+        self.assertEqual(game, original)
+
     def test_movement_resolver_progress_includes_deterministic_paths(self):
         for intent in (
                 {'movement': False, 'target': None},

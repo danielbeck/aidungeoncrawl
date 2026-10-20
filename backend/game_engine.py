@@ -173,7 +173,8 @@ def _resolve_entity(state, collection_name, proposed, comparator, current_locati
         name = _normalized_text(proposed['name'])
         name_matches = [
             entity for entity in candidates
-            if name and _normalized_text(entity['name']) == name
+            if name and any(_normalized_text(value) == name
+                            for value in (entity['name'], *entity.get('aliases', [])))
         ]
         exact_matches = [
             entity for entity in candidates
@@ -191,11 +192,12 @@ def _resolve_entity(state, collection_name, proposed, comparator, current_locati
                 'matched_entities': [_display_entity(entity) for entity in exact_matches],
             })
             raise InvalidTurnResponse(error)
-        text_matches = exact_matches or (name_matches if len(name_matches) == 1 else [])
+        text_matches = name_matches if len(name_matches) == 1 else (
+            exact_matches if not name_matches else [])
         if len(text_matches) == 1:
             entity = text_matches[0]
             reason = ('Unique normalized name and description match; no LLM call needed.'
-                      if exact_matches else 'Unique normalized name match; no LLM call needed.')
+                      if exact_matches else 'Unique normalized name or alias match; no LLM call needed.')
             logger.info('Resolved text %s match without an LLM call.', collection_name)
             comparator_input = {
                 'entity_type': collection_name,
@@ -211,7 +213,10 @@ def _resolve_entity(state, collection_name, proposed, comparator, current_locati
         for entity in candidates:
             comparator_input = {
                 'entity_type': collection_name,
-                'candidate_entity': _display_entity(entity),
+                'candidate_entity': {
+                    **_display_entity(entity),
+                    **({'aliases': list(entity['aliases'])} if entity.get('aliases') else {}),
+                },
                 'proposed_entity': _display_entity(proposed),
             }
             progress('started', request=comparator_input)
@@ -242,7 +247,13 @@ def _resolve_entity(state, collection_name, proposed, comparator, current_locati
             })
             raise InvalidTurnResponse(error)
         if matches:
-            return matches[0]
+            entity = matches[0]
+            if (any(entity is canonical for canonical in entities)
+                    and name and all(
+                        _normalized_text(value) != name
+                        for value in (entity['name'], *entity.get('aliases', [])))):
+                entity.setdefault('aliases', []).append(proposed['name'].strip())
+            return entity
     else:
         progress('skipped', llm=False, entity_type=collection_name,
                  proposed_entity=_display_entity(proposed),

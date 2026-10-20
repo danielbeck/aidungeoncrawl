@@ -138,16 +138,21 @@ compatible shorter names from adjacent places, conflicting materials, and
 owner/possession relationships; shared words or entity type alone are not matches.
 
 Before calling it, code normalizes case, punctuation, spacing, and Unicode:
-- A unique matching name/description, or a unique full name, resolves directly.
+- A unique normalized canonical name or stored alias resolves directly.
   "Tavern" does not match "Town Square Outside the Tavern".
-- Multiple identical name/description matches are ambiguous. Shared names with
-  differing descriptions use a unique description match where possible.
+- Multiple identical name/description matches are ambiguous.
+- Names or aliases shared by eligible candidates require semantic comparison,
+  not an arbitrary selection. Candidate aliases are included in comparator input.
 - Otherwise eligible candidates are compared individually. One positive match
   retains its canonical record and ID; multiple positives reject the turn.
 - No matches allow creation only for supported interactions. Empty candidate
   lists skip the call.
 
 Canonical results appear in `turn.reconciled_entities`.
+An unambiguous comparator match records a different proposed name as an alias
+on the canonical entity, without renaming it or duplicating normalized aliases.
+Synthetic command targets are not canonical entities and do not learn aliases.
+Aliases are saved atomically with the turn; failed turns do not persist them.
 Ambiguity produces a separate failed comparator debug entry: Request details
 identifies the proposed entity and entity type, and Response lists every
 conflicting match under `matched_entities`. Individual comparison results remain
