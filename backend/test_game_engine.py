@@ -218,7 +218,7 @@ class GameEngineTests(unittest.TestCase):
         updated, result = process_turn(game, 'Enter the tavern and take the key.', calls)
 
         self.assertEqual(game, original)
-        self.assertEqual(len(calls['comparator'].inputs), 0)
+        self.assertEqual(len(calls['comparator'].inputs), 1)
         for encoded in calls['comparator'].inputs:
             comparator_context = json.loads(encoded)
             self.assertEqual(
@@ -863,6 +863,42 @@ class GameEngineTests(unittest.TestCase):
             {entity['id'] for entity in result['reconciled_entities']['items']},
             {key['id'], coin['id'], ring['id']},
         )
+
+    def test_inventory_rejects_existing_and_new_npcs(self):
+        for existing in (False, True):
+            for proposed_name in ('Forest Creature', 'the beast'):
+                with self.subTest(existing=existing, proposed_name=proposed_name):
+                    game = new_game(7)
+                    creature = {
+                        'name': 'Forest Creature', 'description': 'A rabbit-like forest animal.',
+                    }
+                    if existing:
+                        game['world']['npcs'].append({
+                            **creature, 'id': 'creature', 'status': 'active',
+                            'currentLocationId': game['currentLocationId'],
+                        })
+                    proposals = [
+                        {'name': 'sword', 'description': 'A steel sword.', 'interaction': 'take'},
+                        {'name': proposed_name, 'description': creature['description'],
+                         'interaction': 'take'},
+                    ]
+                    calls = fake_calls({
+                        'items': proposals, 'locations': [],
+                        'npcs': [] if existing else [{**creature, 'interaction': 'encounter'}],
+                    })
+                    original = copy.deepcopy(game)
+                    updated, result = process_turn(game, 'Draw my sword.', calls)
+                    self.assertEqual(game, original)
+                    self.assertEqual([item['name'] for item in updated['world']['items']],
+                                     ['sword'])
+                    self.assertEqual(len(updated['world']['npcs']), 1)
+                    self.assertEqual(result['manager_results']['inventory']['items'], proposals)
+                    self.assertEqual(result['notable_elements']['items'], [proposals[0]])
+                    self.assertEqual(len(result['ignored_interactions']), 1)
+                    narrator = json.loads(calls['narrator'].inputs[0])
+                    self.assertEqual(
+                        [item['name'] for item in narrator['resolved_context']['carried_items']],
+                        ['sword'])
 
     def test_travel_preserves_carried_items_despite_unrequested_drop(self):
         for action in ('Go back outside.', 'Leave the tavern.', 'Head north.',

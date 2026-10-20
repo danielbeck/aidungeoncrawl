@@ -25,6 +25,9 @@ Ignore NPC motivations, dialogue, and non-inventory story.
 "Pick up the key" is key/take, never key/drop. "Drop the beer" is beer/drop,
 never beer/take. Choose the label from the current action, not past actions
 or mere mentions. Animals and mounts are NPCs, not inventory items.
+Never include people or creatures as items, even when the player picks up,
+carries, captures, or leads them. Drawing or wielding an already-carried weapon
+does not acquire anything; do not list unrelated entities from the scene.
 
 ## Output
 

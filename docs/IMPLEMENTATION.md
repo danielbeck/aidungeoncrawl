@@ -46,6 +46,11 @@ still interprets targets, conditions, and negation. Unrequested drops are logged
 reported as ignored, and excluded from resolved interactions. A requested drop
 combined with travel leaves the item in the starting location.
 
+Inventory proposals are identity-checked against known NPCs and the NPC manager's
+current-turn proposals, using the shared text matching/comparator path. Matches
+are logged and reported as ignored, not created as items or retained as resolved
+inventory interactions. NPCs, including animals and mounts, are never inventory.
+
 ### Movement intent and resolution
 
 `map_manager` receives only `current_action`, without world state or history, to

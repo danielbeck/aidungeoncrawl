@@ -406,7 +406,8 @@ def _resolve_movement(state, intent, context, calls, progress):
 def _explicit_inventory_intent(action):
     match = re.fullmatch(
         r'\s*(?:please\s+)?(?:(?:I\s+)?(?:want\s+to\s+)?)'
-        r'(pick\s+up|take|collect|drop|put\s+down|leave\s+behind)\s+'
+        r'(pick\s+up|take|collect|drop|put\s+down|leave\s+behind|consume|eat|drink|'
+        r'break|smash|destroy)\s+'
         r'([\w\s\'-]+?)[.!]?\s*', action, flags=re.IGNORECASE)
     if match is None:
         return None
@@ -416,19 +417,27 @@ def _explicit_inventory_intent(action):
             'everything', 'all', 'from', 'to', 'on', 'in', 'with'))):
         return None
     target = re.sub(r'^(?:the|a|an|my)\s+', '', target)
-    operation = 'drop' if _normalized_text(match.group(1)) in (
-        'drop', 'put down', 'leave behind') else 'take'
+    verb = _normalized_text(match.group(1))
+    operation = (
+        'drop' if verb in ('drop', 'put down', 'leave behind') else
+        'consume' if verb in ('consume', 'eat', 'drink') else
+        'break' if verb in ('break', 'smash', 'destroy') else 'take'
+    )
     return operation, target
 
 
 def _apply_inventory_interactions(state, manager_result, comparator, current_location_id,
-                                  on_progress=None, action=''):
+                                  on_progress=None, action='', npc_proposals=()):
     if not isinstance(manager_result, dict) or set(manager_result) != {'items'}:
         raise InvalidTurnResponse('Inventory manager must return only an items list.')
     items = manager_result['items']
     if not isinstance(items, list) or len(items) > 20:
         raise InvalidTurnResponse('Inventory manager items must be a list.')
 
+    npc_candidates = {
+        _normalized_text(npc['name']): npc
+        for npc in (*npc_proposals, *state['world']['npcs'])
+    }
     current_npc_ids = {
         npc['id'] for npc in state['world']['npcs']
         if npc.get('status') == 'active' and npc.get('currentLocationId') == current_location_id
@@ -444,12 +453,28 @@ def _apply_inventory_interactions(state, manager_result, comparator, current_loc
         r'|\bleave\b[^.!?;]*\b(?:behind|here|there|on|at|in|with)\b',
         action, flags=re.IGNORECASE,
     ) is not None
+    disposal_requested = {
+        'drop': drop_requested,
+        'give': re.search(r'\b(?:give|hand|offer|pass|feed|donate)\b', action,
+                          flags=re.IGNORECASE) is not None,
+        'consume': re.search(r'\b(?:consume|eat|drink|swallow|sip|devour|quaff|finish|use)\b',
+                             action, flags=re.IGNORECASE) is not None,
+        'break': re.search(r'\b(?:break|smash|destroy|shatter|crush|snap|burn|tear)\b',
+                           action, flags=re.IGNORECASE) is not None,
+    }
     for proposed in items:
+        expected_fields = {'name', 'description', 'interaction'}
+        if isinstance(proposed, dict) and proposed.get('interaction') == 'give':
+            expected_fields.add('recipient')
         if (not isinstance(proposed, dict)
-                or set(proposed) != {'name', 'description', 'interaction'}
+                or set(proposed) != expected_fields
                 or not isinstance(proposed.get('name'), str) or not proposed['name'].strip()
                 or not isinstance(proposed.get('description'), str) or not proposed['description'].strip()
-                or proposed.get('interaction') not in ('take', 'drop')):
+                or proposed.get('interaction') not in ('take', 'drop', 'give', 'consume', 'break')
+                or ('recipient' in expected_fields and (
+                    not isinstance(proposed['recipient'], str)
+                    or not proposed['recipient'].strip()
+                    or len(proposed['recipient']) > 1000))):
             raise InvalidTurnResponse('Inventory manager returned an invalid item interaction.')
         if explicit_intent is not None:
             intended_operation, target = explicit_intent
@@ -462,6 +487,8 @@ def _apply_inventory_interactions(state, manager_result, comparator, current_loc
                                 reason=reason)
                 continue
             if proposed['interaction'] != intended_operation:
+                if proposed['interaction'] == 'give':
+                    proposed.pop('recipient')
                 original_interaction = proposed['interaction']
                 proposed['interaction'] = intended_operation
                 reason = f'Corrected {original_interaction} to {intended_operation} from current_action.'
@@ -470,9 +497,22 @@ def _apply_inventory_interactions(state, manager_result, comparator, current_loc
                     on_progress('inventory', 'corrected',
                                 proposed_entity=copy.deepcopy(proposed), reason=reason)
         interaction = proposed['interaction']
-        if interaction == 'drop' and not drop_requested:
-            reason = 'Current action does not request putting down or leaving an item behind.'
-            logger.warning('Ignoring unrequested drop of %s in game %s: %s',
+        if interaction != 'take' and not disposal_requested[interaction]:
+            reason = f'Current action does not request {interaction} disposal of an item.'
+            logger.warning('Ignoring unrequested %s of %s in game %s: %s',
+                           interaction, proposed['name'], state['id'], reason)
+            if on_progress is not None:
+                on_progress('inventory', 'ignored', proposed_entity=copy.deepcopy(proposed),
+                            reason=reason)
+            continue
+        npc = _resolve_entity(
+            state, 'npcs', proposed, comparator, current_location_id,
+            create_if_missing=False, on_progress=on_progress,
+            candidates=list(npc_candidates.values()),
+        ) if npc_candidates else None
+        if npc is not None:
+            reason = 'Inventory proposal identifies an NPC, not an inventory item.'
+            logger.warning('Ignoring NPC inventory proposal for %s in game %s: %s',
                            proposed['name'], state['id'], reason)
             if on_progress is not None:
                 on_progress('inventory', 'ignored', proposed_entity=copy.deepcopy(proposed),
@@ -489,7 +529,7 @@ def _apply_inventory_interactions(state, manager_result, comparator, current_loc
                     and holder.get('id') in current_npc_ids)
             )
             if (existing.get('status') == 'available'
-                    and (holder == player_holder if interaction == 'drop' else accessible)):
+                    and (accessible if interaction == 'take' else holder == player_holder)):
                 candidates.append(existing)
         item = _resolve_entity(
             state, 'items', proposed, comparator, current_location_id,
@@ -498,9 +538,9 @@ def _apply_inventory_interactions(state, manager_result, comparator, current_loc
             candidates=candidates,
         )
         if item is None:
-            reason = 'No available carried item matches this drop; no item was changed.'
-            logger.warning('Ignoring unmatched drop of %s in game %s: %s',
-                           proposed['name'], state['id'], reason)
+            reason = f'No available carried item matches this {interaction}; no item was changed.'
+            logger.warning('Ignoring unmatched %s of %s in game %s: %s',
+                           interaction, proposed['name'], state['id'], reason)
             if on_progress is not None:
                 on_progress('inventory', 'ignored', proposed_entity=copy.deepcopy(proposed),
                             reason=reason)
@@ -519,6 +559,27 @@ def _apply_inventory_interactions(state, manager_result, comparator, current_loc
             item['holder'] = player_holder
             item['knownByPlayer'] = True
             item['status'] = 'available'
+        elif interaction == 'give':
+            recipient = _resolve_entity(
+                state, 'npcs',
+                {'name': proposed['recipient'], 'description': proposed['recipient']},
+                comparator, current_location_id, create_if_missing=False,
+                on_progress=on_progress,
+                candidates=[npc for npc in state['world']['npcs']
+                            if npc['id'] in current_npc_ids],
+            )
+            if recipient is None:
+                reason = 'No present NPC matches the recipient; the item remains carried.'
+                logger.warning('Ignoring give of %s in game %s: %s',
+                               proposed['name'], state['id'], reason)
+                if on_progress is not None:
+                    on_progress('inventory', 'ignored', proposed_entity=copy.deepcopy(proposed),
+                                reason=reason)
+                continue
+            item['holder'] = {'type': 'npc', 'id': recipient['id']}
+            item['knownByPlayer'] = True
+        elif interaction in ('consume', 'break'):
+            state['world']['items'].remove(item)
         else:
             if holder == player_holder:
                 item['holder'] = location_holder
@@ -593,7 +654,7 @@ def process_turn(state, action, calls=None, settings=None, on_progress=None):
         'inventory': {
             **manager_turn_context,
             **{key: context[key] for key in (
-                'current_location', 'carried_items', 'items_here', 'objects_here',
+                'current_location', 'carried_items', 'items_here', 'objects_here', 'npcs_here',
             )},
         },
         'map': {
@@ -633,7 +694,8 @@ def process_turn(state, action, calls=None, settings=None, on_progress=None):
     try:
         manager_items = _apply_inventory_interactions(
             candidate, effective_manager_results['inventory'], calls['comparator'],
-            current_location_id, on_progress=progress, action=action)
+            current_location_id, on_progress=progress, action=action,
+            npc_proposals=effective_manager_results['npcs']['npcs'])
         manager_locations, location_interactions, movement_resolution = _resolve_movement(
             candidate, manager_results['map'], context, calls, progress)
         effective_manager_results['map'] = {'locations': location_interactions}
