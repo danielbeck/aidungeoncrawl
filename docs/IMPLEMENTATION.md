@@ -40,22 +40,21 @@ the item carried. NPC-held items are already supported by the holder model.
 `consume` and `break` delete the matched item record, without spawning remains.
 
 Code recognizes simple explicit named-item commands and corrects reversed labels
-only when the full normalized target name matches, ignoring a leading article
-or "my". Unrelated proposals for those commands are ignored with reasons.
+when the proposed item matches the requested target. Normalized exact names,
+ignoring a leading article or "my", match without an LLM call. Different names
+use the shared identity comparator before accepting or rejecting the proposal;
+for example, "mug" can match "mug of beer" without allowing unrelated items.
+Unrelated proposals for those commands are ignored with reasons.
 Compound, conditional, negated, pronoun-based, and unsupported wording is left
 to manager interpretation. Original output is retained; corrections appear in
 effective output and progress.
 
 Carried items persist across location changes and omission from manager output.
-Before applying a proposed drop, code requires disposal wording in the current
-action (drop/discard/abandon, put/place/set, or leave-behind/placement wording).
-This is a conservative wording guard, not a full intent parser; the manager
-still interprets targets, conditions, and negation. Unrequested drops are logged,
-reported as ignored, and excluded from resolved interactions. A requested drop
-combined with travel leaves the item in the starting location.
-The same current-action wording guard applies separately to giving, consumption,
-and destruction. Simple eat/drink/consume and break/smash/destroy commands also
-correct reversed labels for exact target names. Partial consumption, suitability,
+Disposal intent is interpreted by the inventory manager, not keyword allowlists
+in the engine. State eligibility and identity checks still apply. A drop combined
+with travel leaves the item in the starting location.
+Simple eat/drink/consume and break/smash/destroy commands also
+correct reversed labels for matching targets. Partial consumption, suitability,
 negation, and complex requests remain the inventory manager's responsibility.
 
 Inventory proposals are identity-checked against known NPCs and the NPC manager's

@@ -447,23 +447,6 @@ def _apply_inventory_interactions(state, manager_result, comparator, current_loc
     resolved = []
     applied = []
     explicit_intent = _explicit_inventory_intent(action)
-    drop_requested = re.search(
-        r'\bdrop\b(?!\s+(?:by|in|into|down)\b)'
-        r'|\b(?:discard|abandon|put|place)\b'
-        r'|\bset\b(?!\s+(?:off|out|forth)\b)'
-        r'|\bleave\s+behind\b'
-        r'|\bleave\b[^.!?;]*\b(?:behind|here|there|on|at|in|with)\b',
-        action, flags=re.IGNORECASE,
-    ) is not None
-    disposal_requested = {
-        'drop': drop_requested,
-        'give': re.search(r'\b(?:give|hand|offer|pass|feed|donate)\b', action,
-                          flags=re.IGNORECASE) is not None,
-        'consume': re.search(r'\b(?:consume|eat|drink|swallow|sip|devour|quaff|finish|use)\b',
-                             action, flags=re.IGNORECASE) is not None,
-        'break': re.search(r'\b(?:break|smash|destroy|shatter|crush|snap|burn|tear)\b',
-                           action, flags=re.IGNORECASE) is not None,
-    }
     for proposed in items:
         expected_fields = {'name', 'description', 'interaction'}
         if isinstance(proposed, dict) and proposed.get('interaction') == 'give':
@@ -481,7 +464,14 @@ def _apply_inventory_interactions(state, manager_result, comparator, current_loc
         if explicit_intent is not None:
             intended_operation, target = explicit_intent
             name = re.sub(r'^(?:the|a|an|my)\s+', '', _normalized_text(proposed['name']))
-            if name != target:
+            target_match = name == target
+            if not target_match:
+                target_match = _resolve_entity(
+                    state, 'items', proposed, comparator, current_location_id,
+                    create_if_missing=False, on_progress=on_progress,
+                    candidates=[{'name': target, 'description': target}],
+                ) is not None
+            if not target_match:
                 reason = 'Item does not match the target of the explicit inventory command.'
                 logger.warning('Ignoring inventory proposal for %s: %s', proposed['name'], reason)
                 if on_progress is not None:
@@ -499,14 +489,6 @@ def _apply_inventory_interactions(state, manager_result, comparator, current_loc
                     on_progress('inventory', 'corrected',
                                 proposed_entity=copy.deepcopy(proposed), reason=reason)
         interaction = proposed['interaction']
-        if interaction != 'take' and not disposal_requested[interaction]:
-            reason = f'Current action does not request {interaction} disposal of an item.'
-            logger.warning('Ignoring unrequested %s of %s in game %s: %s',
-                           interaction, proposed['name'], state['id'], reason)
-            if on_progress is not None:
-                on_progress('inventory', 'ignored', proposed_entity=copy.deepcopy(proposed),
-                            reason=reason)
-            continue
         npc = _resolve_entity(
             state, 'npcs', proposed, comparator, current_location_id,
             create_if_missing=False, on_progress=on_progress,

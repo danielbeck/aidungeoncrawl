@@ -190,6 +190,41 @@ class GameEngineTests(unittest.TestCase):
         self.assertEqual(result['notable_elements']['items'], [])
         self.assertEqual(len(result['ignored_interactions']), 2)
 
+    def test_explicit_pickup_compares_different_target_names_before_rejecting(self):
+        for same_entity in (True, False):
+            with self.subTest(same_entity=same_entity):
+                game = new_game(7)
+                proposal = {
+                    'name': 'mug', 'description': 'A glass of ale.', 'interaction': 'take',
+                }
+                calls = fake_calls({'items': [proposal], 'locations': [], 'npcs': []})
+                calls['comparator'] = FakeCall({'same_entity': same_entity})
+                original = copy.deepcopy(game)
+                updated, result = process_turn(game, 'Pick up the mug of beer.', calls)
+                self.assertEqual(game, original)
+                self.assertEqual(len(calls['comparator'].inputs), 1)
+                comparison = json.loads(calls['comparator'].inputs[0])
+                self.assertEqual(comparison['candidate_entity']['name'], 'mug of beer')
+                self.assertEqual(comparison['proposed_entity']['name'], 'mug')
+                self.assertEqual(len(result['ignored_interactions']), int(not same_entity))
+                if same_entity:
+                    self.assertEqual(updated['world']['items'][0]['name'], 'mug')
+                    self.assertEqual(updated['world']['items'][0]['holder'],
+                                     {'type': 'player', 'id': game['playerId']})
+                    narrator = json.loads(calls['narrator'].inputs[0])
+                    self.assertEqual(narrator['resolved_interactions']['items'], [proposal])
+                else:
+                    self.assertEqual(updated['world']['items'], [])
+
+    def test_explicit_pickup_exact_target_needs_no_comparator(self):
+        calls = fake_calls({
+            'items': [{'name': 'mug', 'description': 'A glass of ale.', 'interaction': 'take'}],
+            'locations': [], 'npcs': [],
+        })
+        updated, _ = process_turn(new_game(7), 'Pick up the mug.', calls)
+        self.assertEqual(updated['world']['items'][0]['name'], 'mug')
+        self.assertEqual(calls['comparator'].inputs, [])
+
     def test_new_game_has_simple_exchange_history(self):
         game = new_game(7)
         self.assertEqual(game['history'], {
@@ -926,29 +961,60 @@ class GameEngineTests(unittest.TestCase):
                 self.assertEqual(narrator['resolved_interactions']['items'], [proposal])
                 self.assertEqual(result['reconciled_entities']['items'][0]['id'], 'beer')
 
-    def test_disposal_requires_current_request_and_carried_item(self):
+    def test_disposal_requires_carried_item(self):
         for interaction, action in (
                 ('give', 'Give the beer to Mira.'),
                 ('consume', 'Drink the beer.'),
                 ('break', 'Smash the beer.')):
-            for missing, current_action in ((True, action), (False, 'Head north.')):
-                with self.subTest(interaction=interaction, missing=missing):
-                    game = new_game(7)
-                    game['world']['items'].append({
-                        'id': 'beer', 'name': 'beer', 'description': 'A glass of ale.',
-                        'status': 'available',
-                        'holder': {'type': 'location' if missing else 'player',
-                                   'id': game['currentLocationId'] if missing else game['playerId']},
+            with self.subTest(interaction=interaction):
+                game = new_game(7)
+                game['world']['items'].append({
+                    'id': 'beer', 'name': 'beer', 'description': 'A glass of ale.',
+                    'status': 'available',
+                    'holder': {'type': 'location', 'id': game['currentLocationId']},
+                })
+                proposal = {'name': 'beer', 'description': 'A glass of ale.',
+                            'interaction': interaction}
+                if interaction == 'give':
+                    proposal['recipient'] = 'Mira'
+                calls = fake_calls({'items': [proposal], 'locations': [], 'npcs': []})
+                updated, result = process_turn(game, action, calls)
+                self.assertEqual(updated['world'], game['world'])
+                self.assertEqual(result['notable_elements']['items'], [])
+                self.assertEqual(len(result['ignored_interactions']), 1)
+
+    def test_disposal_accepts_manager_interpretation_without_keyword_allowlist(self):
+        for interaction, action in (
+                ('drop', 'Let the beer fall onto the floor.'),
+                ('give', 'The beer is yours, Mira.'),
+                ('consume', 'Down the beer in one gulp.'),
+                ('break', 'Reduce the beer glass to fragments.')):
+            with self.subTest(interaction=interaction):
+                game = new_game(7)
+                game['world']['items'].append({
+                    'id': 'beer', 'name': 'beer', 'description': 'A glass of ale.',
+                    'status': 'available',
+                    'holder': {'type': 'player', 'id': game['playerId']},
+                })
+                game['world']['npcs'].append({
+                    'id': 'mira', 'name': 'Mira', 'description': 'The keeper.',
+                    'status': 'active', 'currentLocationId': game['currentLocationId'],
+                })
+                proposal = {'name': 'beer', 'description': 'A glass of ale.',
+                            'interaction': interaction}
+                if interaction == 'give':
+                    proposal['recipient'] = 'Mira'
+                calls = fake_calls({'items': [proposal], 'locations': [], 'npcs': []})
+                updated, result = process_turn(game, action, calls)
+                self.assertEqual(result['ignored_interactions'], [])
+                self.assertEqual(result['notable_elements']['items'], [proposal])
+                if interaction in ('consume', 'break'):
+                    self.assertEqual(updated['world']['items'], [])
+                else:
+                    self.assertEqual(updated['world']['items'][0]['holder'], {
+                        'type': 'npc' if interaction == 'give' else 'location',
+                        'id': 'mira' if interaction == 'give' else game['currentLocationId'],
                     })
-                    proposal = {'name': 'beer', 'description': 'A glass of ale.',
-                                'interaction': interaction}
-                    if interaction == 'give':
-                        proposal['recipient'] = 'Mira'
-                    calls = fake_calls({'items': [proposal], 'locations': [], 'npcs': []})
-                    updated, result = process_turn(game, current_action, calls)
-                    self.assertEqual(updated['world'], game['world'])
-                    self.assertEqual(result['notable_elements']['items'], [])
-                    self.assertEqual(len(result['ignored_interactions']), 1)
 
     def test_give_requires_present_recipient_and_allows_retrieval(self):
         game = new_game(7)
@@ -1029,35 +1095,29 @@ class GameEngineTests(unittest.TestCase):
                         [item['name'] for item in narrator['resolved_context']['carried_items']],
                         ['sword'])
 
-    def test_travel_preserves_carried_items_despite_unrequested_drop(self):
+    def test_travel_preserves_carried_items_omitted_from_manager_output(self):
         for action in ('Go back outside.', 'Leave the tavern.', 'Head north.',
                        'Enter the forest.', 'Look around.', 'Set off north.',
                        'Drop by the tavern.'):
-            for proposed_drop in (False, True):
-                with self.subTest(action=action, proposed_drop=proposed_drop):
-                    game = new_game(7)
-                    beer = {
-                        'id': 'beer', 'name': 'beer', 'description': 'A glass of ale.',
-                        'status': 'available',
-                        'holder': {'type': 'player', 'id': game['playerId']},
-                    }
-                    game['world']['items'].append(beer)
-                    calls = fake_calls()
-                    calls['map'].data = movement_intent('Forest')
-                    if proposed_drop:
-                        calls['inventory'].data = {'items': [
-                            {**{key: beer[key] for key in ('name', 'description')},
-                             'interaction': 'drop'},
-                        ]}
-                    updated, result = process_turn(game, action, calls)
-                    self.assertNotEqual(updated['currentLocationId'], game['currentLocationId'])
-                    self.assertEqual(updated['world']['items'], [beer])
-                    self.assertEqual(result['notable_elements']['items'], [])
-                    narrator = json.loads(calls['narrator'].inputs[0])
-                    self.assertEqual(narrator['resolved_context']['carried_items'], [
-                        {'name': 'beer', 'description': 'A glass of ale.'},
-                    ])
-                    self.assertEqual(len(result['ignored_interactions']), int(proposed_drop))
+            with self.subTest(action=action):
+                game = new_game(7)
+                beer = {
+                    'id': 'beer', 'name': 'beer', 'description': 'A glass of ale.',
+                    'status': 'available',
+                    'holder': {'type': 'player', 'id': game['playerId']},
+                }
+                game['world']['items'].append(beer)
+                calls = fake_calls()
+                calls['map'].data = movement_intent('Forest')
+                updated, result = process_turn(game, action, calls)
+                self.assertNotEqual(updated['currentLocationId'], game['currentLocationId'])
+                self.assertEqual(updated['world']['items'], [beer])
+                self.assertEqual(result['notable_elements']['items'], [])
+                narrator = json.loads(calls['narrator'].inputs[0])
+                self.assertEqual(narrator['resolved_context']['carried_items'], [
+                    {'name': 'beer', 'description': 'A glass of ale.'},
+                ])
+                self.assertEqual(result['ignored_interactions'], [])
 
     def test_requested_drop_with_travel_leaves_item_in_starting_location(self):
         for action in ('Drop the beer and head north.', 'Put the beer down and go outside.',
