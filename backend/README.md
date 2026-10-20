@@ -95,6 +95,10 @@ Supported persistent changes and component contracts are documented once in
 
 Saving is atomic and version-checked. Reusing a completed `request_id` returns
 the saved result. Invalid model responses do not partially change state.
+Turn errors include the LLM or validation failure reason in both JSON and streamed
+responses, so the gameplay error and debug progress explain why the turn failed.
+Rejected manager output appears in the failed manager's debug Response section.
+Provider transport-error details and tracebacks are not included.
 Summary preparation is a separate post-turn request; it does not delay returning
 the saved narration.
 

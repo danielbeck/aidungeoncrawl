@@ -206,6 +206,23 @@ class LLMCallTests(unittest.TestCase):
 
 
 class GameplayManagerResponseTests(unittest.TestCase):
+    def test_inventory_schema_requires_recipient_only_for_give(self):
+        call = InventoryManagerCall(transport=FakeTransport(''))
+        branches = call.response_format['properties']['items']['items']['anyOf']
+        self.assertEqual(len(branches), 2)
+        for interaction in ('take', 'drop', 'consume', 'break', 'give'):
+            with self.subTest(interaction=interaction):
+                matches = [branch for branch in branches
+                           if interaction in branch['properties']['interaction']['enum']]
+                self.assertEqual(len(matches), 1)
+                branch = matches[0]
+                expected = {'name', 'description', 'interaction'}
+                if interaction == 'give':
+                    expected.add('recipient')
+                self.assertEqual(set(branch['required']), expected)
+                self.assertEqual(set(branch['properties']), expected)
+                self.assertFalse(branch['additionalProperties'])
+
     def test_inventory_disposal_contract(self):
         call = InventoryManagerCall(transport=FakeTransport(''))
         for interaction in ('give', 'consume', 'break'):
@@ -288,7 +305,7 @@ class GameplayManagerResponseTests(unittest.TestCase):
         for data in (
                 {'destination': None, 'clarification': ' '},
                 {'destination': {'name': 'Tavern', 'description': 'A tavern.'},
-                 'clarification': 'Which doorway?'},
+                 'clarification': ' '},
                 {'destination': {'name': '', 'description': 'A tavern.'}, 'clarification': None},
                 {'destination': {'name': 'Tavern', 'description': 'A tavern.', 'id': 1},
                  'clarification': None}):
@@ -304,6 +321,20 @@ class GameplayManagerResponseTests(unittest.TestCase):
         })
         self.assertEqual(result.raw, raw)
         self.assertIn('without moving', logs.output[0])
+
+    def test_conflicting_resolution_prefers_clarification_and_preserves_raw(self):
+        raw = json.dumps({
+            'destination': {'name': 'Forest Creature', 'description': 'A large creature.'},
+            'clarification': 'Which place did the Forest Creature send you to?',
+        })
+        with self.assertLogs('backend.llm_calls.gameplay', level='WARNING') as logs:
+            result = MovementResolverCall(transport=FakeTransport(raw)).run('Follow him.')
+        self.assertEqual(result.data, {
+            'destination': None,
+            'clarification': 'Which place did the Forest Creature send you to?',
+        })
+        self.assertEqual(result.raw, raw)
+        self.assertIn('discarding destination', logs.output[0])
 
 
 class ProviderChatTests(unittest.TestCase):

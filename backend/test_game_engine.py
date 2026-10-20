@@ -738,6 +738,25 @@ class GameEngineTests(unittest.TestCase):
         self.assertEqual(narrator['movement_resolution']['clarification'], 'Which place do you mean?')
         self.assertEqual(narrator['ignored_interactions'][0]['reason'], 'Which place do you mean?')
 
+    def test_conflicting_movement_resolution_does_not_create_npc_location(self):
+        game = new_game(7)
+        calls = fake_calls()
+        calls['map'].data = movement_intent('him', 'reference')
+        clarification = 'Which place did the Forest Creature send you to?'
+        calls['movement_resolver'].data = {
+            'destination': {'name': 'Forest Creature', 'description': 'A large creature.'},
+            'clarification': clarification,
+        }
+        with self.assertLogs(level='WARNING'):
+            updated, result = process_turn(game, 'Follow him.', calls)
+        self.assertEqual(updated['world'], game['world'])
+        self.assertFalse(result['movement_outcome']['moved'])
+        self.assertEqual(updated['currentLocationId'], game['currentLocationId'])
+        self.assertEqual(result['movement_resolution'],
+                         {'destination': None, 'clarification': clarification})
+        narrator = json.loads(calls['narrator'].inputs[0])
+        self.assertEqual(narrator['movement_resolution'], result['movement_resolution'])
+
     def test_legacy_game_back_does_not_guess_from_prose_history(self):
         game = new_game(7)
         calls = fake_calls()

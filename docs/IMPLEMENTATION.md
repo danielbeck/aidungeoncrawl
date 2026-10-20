@@ -31,6 +31,8 @@ Receives `current_action`, `historical_summary`, the current location, carried
 items, local items/objects, and present NPCs. Returns only `items`, each with
 `name`, `description`, and `interaction` (`take`, `drop`, `give`, `consume`, or
 `break`). Only `give` additionally requires `recipient`, a present NPC's name.
+The response schema uses separate give/non-give branches so constrained output
+requires a recipient for give and disallows it for other interactions.
 All disposal operations match available carried items only; missing targets are
 ignored with reasons, never created. `give` transfers ownership to an existing
 active NPC in the starting location; an absent or unmatched recipient leaves
@@ -83,8 +85,11 @@ movement flags, and malformed targets for true still fail validation.
   objective destination or a question/explanation, not an invented substitute
   for an ambiguous reference.
   A response with both fields null is recovered with a logged warning and
-  "Where would you like to go?" clarification. No movement is applied; narration
-  and other valid turn effects can continue. Other malformed responses still fail.
+  "Where would you like to go?" clarification. A response containing both a
+  destination and a valid clarification is recovered with a logged warning:
+  clarification takes precedence and the destination is discarded. No movement
+  is applied; narration and other valid turn effects can continue.
+  Other malformed responses still fail.
 
 An explicit destination takes precedence over a direction. Exploratory travel
 can name the area being explored without specifying a destination to reach.

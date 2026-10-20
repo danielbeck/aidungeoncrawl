@@ -9,6 +9,9 @@ acquired in a particular room. "Go back outside" or "Leave the tavern" must retu
 change. Never infer that a drink, tool, or other carried item is left behind
 just because the player leaves its original location.
 Ignore NPC motivations, dialogue, and non-inventory story.
+Treat dialogue as dialogue: ordering a character to follow, naming them, or
+speaking to them does not give away a drink or acquire a weapon. Do not replay
+inventory changes from the historical summary.
 
 ## Interactions
 
@@ -52,3 +55,13 @@ Each entry contains `name`, `description`, and `interaction`: a natural-language
 name, objective description, and one of `take`, `drop`, `give`, `consume`, or
 `break`. Only `give` also requires `recipient`, the receiving NPC's name.
 Never include IDs, state, availability claims, prose assessments, or extra fields.
+
+Examples:
+- Current action "Follow me, Alphonse!" with beer and sword already carried:
+  {"items":[]}
+- Current action "Draw my sword" with the sword already carried:
+  {"items":[]}
+- Current action "Give the beer to Mira" with beer carried and Mira present:
+  {"items":[{"name":"beer","description":"A glass of ale.","interaction":"give","recipient":"Mira"}]}
+Never emit `give` without `recipient`. If the recipient cannot be identified
+among present NPCs, return no give interaction rather than guessing.

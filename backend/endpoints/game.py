@@ -282,13 +282,20 @@ def _complete_turn(user_id, game_id, request_id, action, original_state,
             original_state, action, **options)
     except LLMError as error:
         current_app.logger.error('LLM gameplay turn failed for user %s: %s', user_id, error)
-        return jsonify({'error': 'The game could not complete that turn. Your state was not changed.'}), 502
+        return jsonify({
+            'error': f'The game could not complete that turn: {error} Your state was not changed.',
+        }), 502
     except InvalidTurnResponse as error:
         current_app.logger.warning('Rejected gameplay response for user %s: %s', user_id, error)
-        return jsonify({'error': 'The game returned invalid turn data. Your state was not changed.'}), 502
+        return jsonify({
+            'error': f'The game returned invalid turn data: {error} Your state was not changed.',
+        }), 502
     except (KeyError, TypeError, ValueError) as error:
         current_app.logger.exception('Invalid gameplay response for user %s: %s', user_id, error)
-        return jsonify({'error': 'The game returned an invalid response. Your state was not changed.'}), 502
+        return jsonify({
+            'error': f'The game returned an invalid response: {type(error).__name__}: '
+                     f'{error} Your state was not changed.',
+        }), 502
 
     response = {
         'game': updated_state,

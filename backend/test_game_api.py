@@ -4,11 +4,12 @@ import sqlite3
 import threading
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from backend.app import app
 from backend.account_schema import ensure_account_schema
 from backend.game_engine import InvalidTurnResponse, new_game
+from backend.harness.llm_provider import LLMError
 
 
 class GameApiTests(unittest.TestCase):
@@ -146,7 +147,76 @@ class GameApiTests(unittest.TestCase):
         self.assertEqual(events[-1]['type'], 'error')
         self.assertEqual(events[-1]['status'], 502)
         self.assertIn('state was not changed', events[-1]['data']['error'])
+        self.assertIn('Bad item', events[-1]['data']['error'])
         self.assertEqual(self.client.get('/game/').get_json()['game'], game)
+
+    def test_turn_failures_explain_reason_in_json_and_stream(self):
+        game = self.client.get('/game/').get_json()['game']
+        for failure in (
+                LLMError('inventory_manager: invalid interaction.',
+                         details='PRIVATE RAW PROVIDER RESPONSE'),
+                InvalidTurnResponse('Ambiguous item identity.'),
+                KeyError('recipient'),
+                ValueError('Invalid destination.'),
+                TypeError('Expected an item list.')):
+            for streaming in (False, True):
+                with self.subTest(failure=type(failure).__name__, streaming=streaming):
+                    with patch('backend.endpoints.game.process_turn', side_effect=failure):
+                        response = self.client.post('/game/turn', json={
+                            'action': 'Look around.', 'game_id': game['id'],
+                            'request_id': 'efb74c49-3e11-4bf1-b72f-447e4b632c08',
+                        }, headers={'Accept': 'application/x-ndjson' if streaming
+                                    else 'application/json'})
+                    if streaming:
+                        event = json.loads(response.data.splitlines()[-1])
+                        self.assertEqual(event['type'], 'error')
+                        self.assertEqual(event['status'], 502)
+                        data = event['data']
+                    else:
+                        self.assertEqual(response.status_code, 502)
+                        data = response.get_json()
+                    self.assertIn(str(failure), data['error'])
+                    self.assertIn('state was not changed', data['error'])
+                    self.assertNotIn('PRIVATE RAW PROVIDER RESPONSE', json.dumps(data))
+                    self.assertNotIn('Traceback', data['error'])
+                    self.assertEqual(self.client.get('/game/').get_json()['game'], game)
+
+    def test_stream_shows_rejected_manager_response(self):
+        from backend.game_engine import process_turn
+        from backend.harness.llm_calls import LLMResponseError
+        from backend.test_game_engine import fake_calls
+
+        game = self.client.get('/game/').get_json()['game']
+        rejected = {'items': [{'name': 'Beer', 'interaction': 'consume'}]}
+        for failure in (
+                LLMResponseError('inventory_manager: missing description.', details=rejected),
+                LLMResponseError('inventory_manager: response was not a JSON object.',
+                                 details='This is not JSON.'),
+                LLMError('Provider unavailable.', details='PRIVATE PROVIDER DETAILS')):
+            with self.subTest(failure=str(failure)):
+                calls = fake_calls()
+                calls['inventory'].run = Mock(side_effect=failure)
+
+                def resolve(state, action, settings=None, on_progress=None):
+                    return process_turn(state, action, calls=calls, on_progress=on_progress)
+
+                with patch('backend.endpoints.game.process_turn', side_effect=resolve):
+                    response = self.client.post('/game/turn', json={
+                        'action': 'Drink the beer.', 'game_id': game['id'],
+                        'request_id': 'efb74c49-3e11-4bf1-b72f-447e4b632c08',
+                    }, headers={'Accept': 'application/x-ndjson'})
+                    events = [json.loads(line) for line in response.data.splitlines()]
+                failed = next(event for event in events
+                              if event.get('component') == 'inventory'
+                              and event.get('status') == 'failed')
+                self.assertEqual(failed['error'], str(failure))
+                if isinstance(failure, LLMResponseError):
+                    self.assertEqual(failed['response'], failure.details)
+                else:
+                    self.assertNotIn('response', failed)
+                    self.assertNotIn('PRIVATE PROVIDER DETAILS', json.dumps(events))
+                self.assertEqual(events[-1]['type'], 'error')
+                self.assertEqual(self.client.get('/game/').get_json()['game'], game)
 
 
 if __name__ == '__main__':

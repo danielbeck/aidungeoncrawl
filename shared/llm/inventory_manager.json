@@ -4,41 +4,37 @@
     "items": {
       "type": "array",
       "items": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 1000
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "name": {"type": "string", "minLength": 1, "maxLength": 1000},
+              "description": {"type": "string", "minLength": 1, "maxLength": 1000},
+              "interaction": {
+                "type": "string",
+                "enum": ["take", "drop", "consume", "break"]
+              }
+            },
+            "required": ["name", "description", "interaction"],
+            "additionalProperties": false
           },
-          "description": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 1000
-          },
-          "interaction": {
-            "type": "string",
-            "enum": [
-              "take",
-              "drop",
-              "give",
-              "consume",
-              "break"
-            ]
-          },
-          "recipient": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 1000,
-            "description": "For give only: the name of the present NPC receiving the item. Omit for other interactions."
+          {
+            "type": "object",
+            "properties": {
+              "name": {"type": "string", "minLength": 1, "maxLength": 1000},
+              "description": {"type": "string", "minLength": 1, "maxLength": 1000},
+              "interaction": {"type": "string", "enum": ["give"]},
+              "recipient": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000,
+                "description": "The name of the present NPC receiving the item."
+              }
+            },
+            "required": ["name", "description", "interaction", "recipient"],
+            "additionalProperties": false
           }
-        },
-        "required": [
-          "name",
-          "description",
-          "interaction"
-        ],
-        "additionalProperties": false
+        ]
       }
     }
   },

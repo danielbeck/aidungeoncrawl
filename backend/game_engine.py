@@ -8,6 +8,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 try:
+    from backend.harness.llm_calls import LLMResponseError
     from backend.harness.llm_provider import LLMError
     from backend.llm_calls.gameplay import (
         ComparatorCall,
@@ -19,6 +20,7 @@ try:
         HistorySummarizerCall,
     )
 except ImportError:
+    from harness.llm_calls import LLMResponseError
     from harness.llm_provider import LLMError
     from llm_calls.gameplay import (
         ComparatorCall,
@@ -680,9 +682,16 @@ def process_turn(state, action, calls=None, settings=None, on_progress=None):
         manager_results = {}
         for future in as_completed(futures):
             key = futures[future]
-            result = future.result()
-            if key == 'map':
-                MapManagerCall.validate_response(result.data)
+            try:
+                result = future.result()
+                if key == 'map':
+                    MapManagerCall.validate_response(result.data)
+            except LLMError as error:
+                details = {'response': error.details} if isinstance(error, LLMResponseError) else {}
+                progress(key, 'failed', error=str(error), **details)
+                progress('movement_resolver', 'skipped', reason='A manager call failed.')
+                progress('narrator', 'skipped', reason='A manager call failed.')
+                raise
             manager_results[key] = result.data
             progress(key, 'completed', response=result.data,
                      provider=result.provider, model=result.model)

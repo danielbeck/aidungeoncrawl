@@ -29,6 +29,10 @@ target; do not invent a person, their whereabouts, or a journey.
 "where the barkeep sent me" asks for a previously indicated destination, not
 the barkeep's current location or someone to follow. Repeating an unresolved
 target as a location name does not resolve it.
+NPCs are not locations. Do not use a character's name and description as a
+destination. For following a character, resolve the place reached, not the
+character as a place. Only ask where someone sent the player when the intent
+actually refers to being sent; do not substitute that relation for following.
 
 Examples:
 Reference "him"; characters []; exchanges mention only a square and tavern door:

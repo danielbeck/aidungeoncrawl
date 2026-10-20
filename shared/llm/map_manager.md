@@ -13,6 +13,10 @@ Travel does not require a known destination: "Go there" and "Follow him" are
 movement even though their targets may need clarification later. Respect
 negation and conditions; do not execute hypothetical journeys. For compound
 actions, extract the requested travel, ignoring other interactions.
+Distinguish who is being asked to move. Dialogue telling an NPC to follow the
+player ("Follow me, Alphonse!") is not player travel. Do not reverse "me" into
+"him" or invent a player destination. If the player also specifies their own
+journey ("Follow me, Alphonse; I head north"), extract only that journey.
 
 ## Target
 
@@ -50,6 +54,8 @@ Choose the kind:
 -> {"movement":true,"target":{"text":"there","kind":"reference"}}
 "Follow him."
 -> {"movement":true,"target":{"text":"him","kind":"reference"}}
+"Follow me, Alphonse!"
+-> {"movement":false,"target":null}
 "Look at the tavern."
 -> {"movement":false,"target":null}
 "Do not enter the tavern."

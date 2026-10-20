@@ -93,6 +93,14 @@ class MovementResolverCall(LLMCall):
             raise LLMResponseError(
                 'movement_resolver: expected destination and clarification only.', details=data)
         destination, clarification = data['destination'], data['clarification']
+        if destination is not None and isinstance(clarification, str) and clarification.strip():
+            if len(clarification) > 1000:
+                raise LLMResponseError(
+                    'movement_resolver: clarification exceeds 1000 characters.', details=data)
+            logger.warning(
+                'movement_resolver: conflicting destination and clarification; '
+                'discarding destination and requesting clarification without moving.')
+            return {**data, 'destination': None}
         if destination is None:
             if clarification is None:
                 logger.warning(
