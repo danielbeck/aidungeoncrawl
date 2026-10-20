@@ -58,14 +58,15 @@ current turn processing does not expose every possible map edit.
 
 ### Items and objects
 
-The inventory manager reports only `take` and `drop`. Taking acquires an available
+The inventory manager reports `take`, `drop`, `give`, `consume`, and `break`. Taking acquires an available
 local item or plausibly establishes a new one; dropping moves a carried item
 to the starting room. Identity matching prevents duplicate records from alternate
 names. Missing drop targets are reported rather than created.
 
-Consumption, giving items to NPCs, and other item transitions are not currently
-supported. An action such as "Drink the potion" must not be narrated as a
-persisted consumption effect.
+Giving transfers a carried item to a present NPC. Consuming or breaking a carried
+item deletes its record. Missing items or recipients do not create inventory or
+silently discard it. Movement and omission from manager output preserve carried
+items. Narration describes only the inventory effects that were actually resolved.
 
 Existing persistent object records are preserved and displayed. Current turns
 do not create or change their state. Incidental scenery and clues can appear
@@ -93,7 +94,7 @@ and late results cannot overwrite newer state.
 
 The broader experience could eventually support:
 - Creating and changing persistent doors, locks, containers, and other objects.
-- Consumption, NPC transfers, crafting, loss, and other inventory effects.
+- Crafting, partial consumption, salvage, loss, and other inventory effects.
 - NPC movement, removal, death, and richer persistent character state.
 - Narratively justified changes to established exit descriptions/traversability.
 

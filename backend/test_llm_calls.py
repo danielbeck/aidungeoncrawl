@@ -206,6 +206,27 @@ class LLMCallTests(unittest.TestCase):
 
 
 class GameplayManagerResponseTests(unittest.TestCase):
+    def test_inventory_disposal_contract(self):
+        call = InventoryManagerCall(transport=FakeTransport(''))
+        for interaction in ('give', 'consume', 'break'):
+            entry = {'name': 'Potion', 'description': 'A healing potion.',
+                     'interaction': interaction}
+            if interaction == 'give':
+                entry['recipient'] = 'Mira'
+            with self.subTest(interaction=interaction):
+                self.assertEqual(call.validate_response({'items': [entry]}), {'items': [entry]})
+        for recipient in (None, '', ' ', 7):
+            entry = {'name': 'Potion', 'description': 'A healing potion.', 'interaction': 'give'}
+            if recipient is not None:
+                entry['recipient'] = recipient
+            with self.subTest(recipient=recipient), self.assertRaises(LLMResponseError):
+                call.validate_response({'items': [entry]})
+        with self.assertRaises(LLMResponseError):
+            call.validate_response({'items': [{
+                'name': 'Potion', 'description': 'A healing potion.',
+                'interaction': 'consume', 'recipient': 'Mira',
+            }]})
+
     def test_manager_responses_only_allow_domain_entities_and_interactions(self):
         entity = {'name': 'Mira', 'description': 'The tavern keeper.', 'interaction': 'speak'}
         cases = (

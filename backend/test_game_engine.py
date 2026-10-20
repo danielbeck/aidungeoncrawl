@@ -7,7 +7,9 @@ from types import SimpleNamespace
 from backend.game_engine import (
     InvalidTurnResponse, _explicit_inventory_intent, new_game, process_turn,
 )
-from backend.llm_calls.gameplay import ComparatorCall, NarratorCall, HistorySummarizerCall
+from backend.llm_calls.gameplay import (
+    ComparatorCall, InventoryManagerCall, NarratorCall, HistorySummarizerCall,
+)
 from backend.harness.llm_provider import LLMError
 
 
@@ -374,11 +376,11 @@ class GameEngineTests(unittest.TestCase):
         inventory = manager_inputs['inventory']
         self.assertEqual(set(inventory), {
             'current_action', 'current_location', 'carried_items', 'items_here',
-            'objects_here', 'historical_summary',
+            'objects_here', 'npcs_here', 'historical_summary',
         })
         self.assertEqual([item['name'] for item in inventory['items_here']], ['Iron key'])
         self.assertEqual([item['name'] for item in inventory['objects_here']], ['Stone well'])
-        self.assertNotIn('Mira', json.dumps(inventory))
+        self.assertEqual([npc['name'] for npc in inventory['npcs_here']], ['Mira'])
         self.assertNotIn('Distant crown', json.dumps(inventory))
 
         self.assertEqual(set(manager_inputs['map']), {
@@ -863,6 +865,114 @@ class GameEngineTests(unittest.TestCase):
             {entity['id'] for entity in result['reconciled_entities']['items']},
             {key['id'], coin['id'], ring['id']},
         )
+
+    def test_inventory_disposal_operations(self):
+        for interaction, action in (
+                ('give', 'Give the beer to Mira and head north.'),
+                ('consume', 'Drink the beer.'),
+                ('break', 'Smash the beer.')):
+            with self.subTest(interaction=interaction):
+                game = new_game(7)
+                beer = {
+                    'id': 'beer', 'name': 'beer', 'description': 'A glass of ale.',
+                    'status': 'available',
+                    'holder': {'type': 'player', 'id': game['playerId']},
+                }
+                game['world']['items'].append(beer)
+                game['world']['npcs'].append({
+                    'id': 'mira', 'name': 'Mira', 'description': 'The tavern keeper.',
+                    'status': 'active', 'currentLocationId': game['currentLocationId'],
+                })
+                proposal = {'name': 'beer', 'description': beer['description'],
+                            'interaction': interaction}
+                if interaction == 'give':
+                    proposal['recipient'] = 'Mira'
+                calls = fake_calls({'items': [proposal], 'locations': [], 'npcs': []})
+                InventoryManagerCall(transport=lambda *args: {}).validate_response(
+                    calls['inventory'].data)
+                if interaction == 'give':
+                    calls['map'].data = movement_intent('Forest')
+                original = copy.deepcopy(game)
+                updated, result = process_turn(game, action, calls)
+                self.assertEqual(game, original)
+                if interaction == 'give':
+                    self.assertEqual(updated['world']['items'][0]['holder'],
+                                     {'type': 'npc', 'id': 'mira'})
+                    self.assertTrue(result['movement_outcome']['moved'])
+                    self.assertEqual(updated['world']['npcs'], game['world']['npcs'])
+                else:
+                    self.assertEqual(updated['world']['items'], [])
+                narrator = json.loads(calls['narrator'].inputs[0])
+                self.assertEqual(narrator['resolved_context']['carried_items'], [])
+                self.assertEqual(narrator['resolved_interactions']['items'], [proposal])
+                self.assertEqual(result['reconciled_entities']['items'][0]['id'], 'beer')
+
+    def test_disposal_requires_current_request_and_carried_item(self):
+        for interaction, action in (
+                ('give', 'Give the beer to Mira.'),
+                ('consume', 'Drink the beer.'),
+                ('break', 'Smash the beer.')):
+            for missing, current_action in ((True, action), (False, 'Head north.')):
+                with self.subTest(interaction=interaction, missing=missing):
+                    game = new_game(7)
+                    game['world']['items'].append({
+                        'id': 'beer', 'name': 'beer', 'description': 'A glass of ale.',
+                        'status': 'available',
+                        'holder': {'type': 'location' if missing else 'player',
+                                   'id': game['currentLocationId'] if missing else game['playerId']},
+                    })
+                    proposal = {'name': 'beer', 'description': 'A glass of ale.',
+                                'interaction': interaction}
+                    if interaction == 'give':
+                        proposal['recipient'] = 'Mira'
+                    calls = fake_calls({'items': [proposal], 'locations': [], 'npcs': []})
+                    updated, result = process_turn(game, current_action, calls)
+                    self.assertEqual(updated['world'], game['world'])
+                    self.assertEqual(result['notable_elements']['items'], [])
+                    self.assertEqual(len(result['ignored_interactions']), 1)
+
+    def test_give_requires_present_recipient_and_allows_retrieval(self):
+        game = new_game(7)
+        game['world']['items'].append({
+            'id': 'beer', 'name': 'beer', 'description': 'A glass of ale.',
+            'status': 'available', 'holder': {'type': 'player', 'id': game['playerId']},
+        })
+        game['world']['npcs'].append({
+            'id': 'mira', 'name': 'Mira', 'description': 'The tavern keeper.',
+            'status': 'active', 'currentLocationId': 'elsewhere',
+        })
+        give = {'name': 'beer', 'description': 'A glass of ale.',
+                'interaction': 'give', 'recipient': 'Mira'}
+        calls = fake_calls({'items': [give], 'locations': [], 'npcs': []})
+        updated, result = process_turn(game, 'Give the beer to Mira.', calls)
+        self.assertEqual(updated['world'], game['world'])
+        self.assertEqual(len(result['ignored_interactions']), 1)
+        game['world']['npcs'][0]['currentLocationId'] = game['currentLocationId']
+        updated, _ = process_turn(game, 'Give the beer to Mira.', calls)
+        take = {'name': 'beer', 'description': 'A glass of ale.', 'interaction': 'take'}
+        recovered, _ = process_turn(
+            updated, 'Take the beer from Mira.',
+            fake_calls({'items': [take], 'locations': [], 'npcs': []}))
+        self.assertEqual(recovered['world']['items'][0]['id'], 'beer')
+        self.assertEqual(recovered['world']['items'][0]['holder'],
+                         {'type': 'player', 'id': game['playerId']})
+
+    def test_consumption_is_discarded_when_narration_fails(self):
+        game = new_game(7)
+        game['world']['items'].append({
+            'id': 'beer', 'name': 'beer', 'description': 'A glass of ale.',
+            'status': 'available', 'holder': {'type': 'player', 'id': game['playerId']},
+        })
+        calls = fake_calls({
+            'items': [{'name': 'beer', 'description': 'A glass of ale.',
+                       'interaction': 'consume'}],
+            'locations': [], 'npcs': [],
+        })
+        calls['narrator'].data = {}
+        original = copy.deepcopy(game)
+        with self.assertRaises(LLMError):
+            process_turn(game, 'Drink the beer.', calls)
+        self.assertEqual(game, original)
 
     def test_inventory_rejects_existing_and_new_npcs(self):
         for existing in (False, True):

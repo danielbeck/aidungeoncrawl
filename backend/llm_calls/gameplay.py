@@ -10,7 +10,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 MANAGER_INTERACTIONS = {
-    'inventory': ('items', ('take', 'drop')),
+    'inventory': ('items', ('take', 'drop', 'give', 'consume', 'break')),
     'npcs': ('npcs', ('mentioned', 'speak', 'ask', 'offer', 'receive', 'follow', 'help',
                       'threaten', 'attack', 'encounter', 'unclear')),
 }
@@ -27,10 +27,18 @@ def _validate_entity_interactions(data, field, allowed_interactions, call_name):
             f'{call_name}: {field} must be a list of at most 20 entities.', details=data)
 
     for index, entry in enumerate(interactions, 1):
-        if not isinstance(entry, dict) or set(entry) != {'name', 'description', 'interaction'}:
+        expected_fields = {'name', 'description', 'interaction'}
+        if field == 'items' and isinstance(entry, dict) and entry.get('interaction') == 'give':
+            expected_fields.add('recipient')
+        if not isinstance(entry, dict) or set(entry) != expected_fields:
             raise LLMResponseError(
-                f'{call_name}: {field} entry {index} must contain only name, description, '
-                'and interaction.', details=data)
+                f'{call_name}: {field} entry {index} must contain '
+                f'{", ".join(sorted(expected_fields))}.', details=data)
+        if 'recipient' in expected_fields and (
+                not isinstance(entry['recipient'], str) or not entry['recipient'].strip()
+                or len(entry['recipient']) > 1000):
+            raise LLMResponseError(
+                f'{call_name}: give requires a non-empty recipient name.', details=data)
         if any(not isinstance(entry[key], str) or not entry[key].strip()
                or len(entry[key].strip()) > 1000 for key in ('name', 'description')):
             raise LLMResponseError(

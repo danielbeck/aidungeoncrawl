@@ -28,8 +28,14 @@ System prompts, user-message templates, and optional response schemas live in
 ### Inventory manager
 
 Receives `current_action`, `historical_summary`, the current location, carried
-items, and local items/objects. Returns only `items`, each with `name`,
-`description`, and `interaction` (`take` or `drop`).
+items, local items/objects, and present NPCs. Returns only `items`, each with
+`name`, `description`, and `interaction` (`take`, `drop`, `give`, `consume`, or
+`break`). Only `give` additionally requires `recipient`, a present NPC's name.
+All disposal operations match available carried items only; missing targets are
+ignored with reasons, never created. `give` transfers ownership to an existing
+active NPC in the starting location; an absent or unmatched recipient leaves
+the item carried. NPC-held items are already supported by the holder model.
+`consume` and `break` delete the matched item record, without spawning remains.
 
 Code recognizes simple explicit named-item commands and corrects reversed labels
 only when the full normalized target name matches, ignoring a leading article
@@ -45,6 +51,10 @@ This is a conservative wording guard, not a full intent parser; the manager
 still interprets targets, conditions, and negation. Unrequested drops are logged,
 reported as ignored, and excluded from resolved interactions. A requested drop
 combined with travel leaves the item in the starting location.
+The same current-action wording guard applies separately to giving, consumption,
+and destruction. Simple eat/drink/consume and break/smash/destroy commands also
+correct reversed labels for exact target names. Partial consumption, suitability,
+negation, and complex requests remain the inventory manager's responsibility.
 
 Inventory proposals are identity-checked against known NPCs and the NPC manager's
 current-turn proposals, using the shared text matching/comparator path. Matches
@@ -152,8 +162,8 @@ movement and ignored inventory proposals appear in `ignored_interactions` with
 reasons for narration; other valid effects may continue. Ambiguous identity or
 invalid required responses fail the turn without saving.
 
-Consumption, transfers to NPCs, persistent object changes, and NPC simulation
-are unsupported. `notable_elements` and `effective_manager_results` contain
+Persistent object changes and NPC simulation are unsupported.
+`notable_elements` and `effective_manager_results` contain
 retained interpretations, never narrator-generated entity lists.
 
 ## Turn sequence

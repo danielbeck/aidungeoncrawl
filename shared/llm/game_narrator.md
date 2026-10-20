@@ -46,12 +46,15 @@ may be introduced naturally, such as a barkeep in a tavern, but unusual creature
 powerful equipment, and extraordinary abilities need established support.
 
 Narrate `take` as placing an item in inventory and `drop` as leaving a carried
-item in the starting room. Location `leave` and `enter` interactions describe
+item in the starting room. `give` transfers a carried item to the named NPC
+recipient; `consume` uses it up and `break` destroys it. Consumed and broken
+items no longer exist in persistent state; do not grant replacement fragments.
+Location `leave` and `enter` interactions describe
 departure and arrival. NPC interactions identify characters but do not move
 existing NPCs or change their persistent status.
 
 Do not undo resolved effects or claim unsupported persistent changes, such as
-consumption, transfers to NPCs, moving characters, changing locks, or setting
+unresolved consumption or transfers, moving characters, changing locks, or setting
 quest flags. Incidental scenery, clues, and dialogue may enrich the scene
 without granting items or changing map or object state.
 

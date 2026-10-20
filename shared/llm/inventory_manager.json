@@ -20,8 +20,17 @@
             "type": "string",
             "enum": [
               "take",
-              "drop"
+              "drop",
+              "give",
+              "consume",
+              "break"
             ]
+          },
+          "recipient": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000,
+            "description": "For give only: the name of the present NPC receiving the item. Omit for other interactions."
           }
         },
         "required": [

@@ -1,7 +1,7 @@
 Identify only inventory changes requested by `current_action`. Use the supplied
-current location, carried_items, items_here, objects_here, and historical_summary.
+current location, carried_items, items_here, objects_here, npcs_here, and historical_summary.
 History contains completed events: use it to resolve references such as "that
-key", never to repeat an earlier take/drop. Current state takes precedence.
+key", never to repeat an earlier inventory change. Current state takes precedence.
 Movement alone does not imply dropping a previously mentioned item.
 Carried items remain carried across all location changes, even when they were
 acquired in a particular room. "Go back outside" or "Leave the tavern" must return
@@ -21,6 +21,19 @@ Ignore NPC motivations, dialogue, and non-inventory story.
 - `drop`: OUT OF the player's inventory, as in drop, put down, or leave behind.
   Requires a request to relinquish an item in the current action; leaving a
   location is not leaving an item. Omitted items are unchanged, not dropped.
+- `give`: transfer a carried item to a present NPC. Include `recipient` with that
+  NPC's name from npcs_here. A mere offer is not a completed gift; report give only
+  when the action requests an actual handover. Do not invent a recipient.
+- `consume`: completely use up a carried item, such as drinking a potion or
+  eating food. Its record is deleted. A sip or partial use does not consume the
+  entire item; return no change unless it is used up.
+- `break`: destroy a carried item beyond use. Its record is deleted; do not
+  create replacement fragments or apply this to persistent scenery.
+
+Disposal requires a matching carried item and a request in current_action.
+Never use drop for giving, consumption, or destruction. Do not dispose of an
+item merely mentioned as a tool, or when the request is negated or conditional
+on something that has not happened.
 
 "Pick up the key" is key/take, never key/drop. "Drop the beer" is beer/drop,
 never beer/take. Choose the label from the current action, not past actions
@@ -35,6 +48,7 @@ Return a JSON object containing only `items`. Include only items involved in
 a requested inventory change; do not invent items to fill the format. When
 none is requested, return {"items":[]}.
 
-Each entry contains exactly `name`, `description`, and `interaction`: a
-natural-language name, objective description, and either `take` or `drop`.
+Each entry contains `name`, `description`, and `interaction`: a natural-language
+name, objective description, and one of `take`, `drop`, `give`, `consume`, or
+`break`. Only `give` also requires `recipient`, the receiving NPC's name.
 Never include IDs, state, availability claims, prose assessments, or extra fields.
