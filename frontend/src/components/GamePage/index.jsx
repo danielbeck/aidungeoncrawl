@@ -9,8 +9,8 @@ const progressComponentLabels = {
   map: 'Movement intent',
   npcs: 'NPC manager',
   movement_resolver: 'Movement resolver',
-  narrator: 'Dungeon Master',
-  comparator: 'Comparator',
+  narrator: 'Narrator',
+  comparator: 'Entity matcher',
   turn: 'Turn',
   summarizer: 'History summarizer',
 }
@@ -24,6 +24,22 @@ function GamePage() {
   const [progress, setProgress] = useState([])
   const requestId = useRef(null)
   const progressRevision = useRef(0)
+  const storyContent = useRef(null)
+  const actionInput = useRef(null)
+  const restoreActionFocus = useRef(false)
+
+  useEffect(() => {
+    if (!submitting && restoreActionFocus.current) {
+      restoreActionFocus.current = false
+      actionInput.current?.focus({ preventScroll: true })
+    }
+  }, [submitting])
+
+  useEffect(() => {
+    if (window.matchMedia('(min-width: 761px)').matches && storyContent.current) {
+      storyContent.current.scrollTop = storyContent.current.scrollHeight
+    }
+  }, [loading, game?.history.recentEvents, progress, error])
 
   const prepareHistory = async (gameId, revision) => {
     const update = event => {
@@ -85,6 +101,7 @@ function GamePage() {
   const submitAction = async (event) => {
     event.preventDefault()
     if (!action.trim() || submitting || game?.status !== 'active') return
+    restoreActionFocus.current = true
     setSubmitting(true)
     setError('')
     setProgress([])
@@ -157,77 +174,89 @@ function GamePage() {
 
       <div className={styles.layout}>
         <div className={styles.story}>
-          <ol className={styles.events} aria-live="polite">
-            {game.history.recentEvents.map((event, index) => (
-              <li key={`${index}-${event.kind}`} className={event.kind === 'player_action' ? styles.playerEvent : styles.narrationEvent}>
-                <span>{event.kind === 'player_action' ? 'You' : 'Dungeon Master'}</span>
-                <p>{event.content}</p>
-              </li>
-            ))}
-          </ol>
-          {progress.length > 0 && <details className={styles.progress} aria-label="Turn progress">
-            <summary>
-              Turn progress
-              <span className={styles.progressSummaryStatuses}>
-                {progress.map((event, index) => {
-                  const label = progressComponentLabels[event.component] || event.component
-                  const failed = event.status === 'failed' || event.status === 'interrupted'
-                  return <span
-                    key={`${event.component}-${index}`}
-                    className={styles.progressSummaryStatus}
-                    role="img"
-                    aria-label={`${label}: ${event.status}`}
-                    title={`${label}: ${event.status}`}
-                  >
-                    {isProgressPending(event)
-                      ? <span className={styles.spinner} aria-hidden="true" />
-                      : failed
-                        ? <span className={styles.progressFailure} aria-hidden="true">!</span>
-                        : <span className={styles.progressComplete} aria-hidden="true">✓</span>}
-                  </span>
-                })}
-              </span>
-            </summary>
-            <p>Intermediate responses are debug information, not committed game state.</p>
-            <ol role="log" aria-live="polite" aria-relevant="additions text">
-              {progress.map((event, index) => (
-                <li key={index} aria-busy={isProgressPending(event)}>
-                  {isProgressPending(event) && <span className={styles.spinner} aria-hidden="true" />}
-                  <strong>{progressComponentLabels[event.component] || event.component}</strong>
-                  {' — '}{event.status}{event.attempt ? ` (attempt ${event.attempt})` : ''}
-                  {event.provider && <small>{' '}{event.provider}/{event.model}</small>}
-                  {event.reason && <p>{event.reason}</p>}
-                  {event.request && <details>
-                    <summary>Request details</summary>
-                    <pre>{JSON.stringify(event.request, null, 2)}</pre>
-                  </details>}
-                  {event.proposed_entity && <details>
-                    <summary>Proposed entity</summary>
-                    <pre>{JSON.stringify({
-                      entity_type: event.entity_type,
-                      proposed_entity: event.proposed_entity,
-                    }, null, 2)}</pre></details>}
-                  {event.matched_entity && <details>
-                    <summary>Matched entity</summary>
-                    <pre>{JSON.stringify({
-                      matched_entity: event.matched_entity,
-                    }, null, 2)}</pre></details>}
-                  {event.response && <details>
-                    <summary>Response</summary>
-                    <pre>{JSON.stringify(event.response, null, 2)}</pre>
-                  </details>}
-                  {event.error && <p className={styles.error}>{event.error}</p>}
+          <div ref={storyContent} className={styles.storyContent} tabIndex={0} role="region" aria-label="Game history and turn progress">
+            <ol className={styles.events} aria-live="polite">
+              {game.history.recentEvents.map((event, index) => (
+                <li key={`${index}-${event.kind}`} className={event.kind === 'player_action' ? styles.playerEvent : styles.narrationEvent}>
+                  <span>{event.kind === 'player_action' ? 'You' : 'Narrator'}</span>
+                  <p>{event.content}</p>
                 </li>
               ))}
             </ol>
-          </details>}
-          {error && <p className={styles.error} role="alert">{error}</p>}
+            {progress.length > 0 && <details className={styles.progress} aria-label="Turn progress">
+              <summary>
+                Turn progress
+                <span className={styles.progressSummaryStatuses}>
+                  {progress.map((event, index) => {
+                    const label = progressComponentLabels[event.component] || event.component
+                    const failed = event.status === 'failed' || event.status === 'interrupted'
+                    return <span
+                      key={`${event.component}-${index}`}
+                      className={styles.progressSummaryStatus}
+                      role="img"
+                      aria-label={`${label}: ${event.status}`}
+                      title={`${label}: ${event.status}`}
+                    >
+                      {isProgressPending(event)
+                        ? <span className={styles.spinner} aria-hidden="true" />
+                        : failed
+                          ? <span className={styles.progressFailure} aria-hidden="true">!</span>
+                          : <span className={styles.progressComplete} aria-hidden="true">✓</span>}
+                    </span>
+                  })}
+                </span>
+              </summary>
+              <p>Intermediate responses are debug information, not committed game state.</p>
+              <ol role="log" aria-live="polite" aria-relevant="additions text">
+                {progress.map((event, index) => (
+                  <li key={index} aria-busy={isProgressPending(event)}>
+                    {isProgressPending(event) && <span className={styles.spinner} aria-hidden="true" />}
+                    <strong>{progressComponentLabels[event.component] || event.component}</strong>
+                    {' — '}{event.status}{event.attempt ? ` (attempt ${event.attempt})` : ''}
+                    {event.provider && <small>{' '}{event.provider}/{event.model}</small>}
+                    {event.reason && <p>{event.reason}</p>}
+                    {event.request && <details>
+                      <summary>Request details</summary>
+                      <pre>{JSON.stringify(event.request, null, 2)}</pre>
+                    </details>}
+                    {event.proposed_entity && <details>
+                      <summary>Proposed entity</summary>
+                      <pre>{JSON.stringify({
+                        entity_type: event.entity_type,
+                        proposed_entity: event.proposed_entity,
+                      }, null, 2)}</pre></details>}
+                    {event.matched_entity && <details>
+                      <summary>Matched entity</summary>
+                      <pre>{JSON.stringify({
+                        matched_entity: event.matched_entity,
+                      }, null, 2)}</pre></details>}
+                    {event.response && <details>
+                      <summary>Response</summary>
+                      <pre>{JSON.stringify(event.response, null, 2)}</pre>
+                    </details>}
+                    {event.error && <p className={styles.error}>{event.error}</p>}
+                  </li>
+                ))}
+              </ol>
+            </details>}
+            {error && <p className={styles.error} role="alert">{error}</p>}
+          </div>
           {game.status === 'active' ? <>
             <form className={styles.actionForm} onSubmit={submitAction}>
-              <label htmlFor="player-action">What do you do?</label>
               <textarea
+                ref={actionInput}
                 id="player-action"
+                aria-label="What do you do?"
+                aria-describedby="action-input-hint"
                 value={action}
+                onKeyDown={event => {
+                  if (event.key === 'Enter' && !event.shiftKey
+                    && !event.ctrlKey && !event.altKey && !event.metaKey
+                    && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+                    event.preventDefault()
+                    if (action.trim() && !submitting) event.currentTarget.form.requestSubmit()
+                  }
+                }}
                 onChange={event => {
                   if (event.target.value !== action) requestId.current = null
                   setAction(event.target.value)
@@ -237,9 +266,20 @@ function GamePage() {
                 rows={3}
                 disabled={submitting}
               />
-              <button type="submit" disabled={submitting || !action.trim()}>
-                {submitting ? 'The world responds...' : 'Take action'}
-              </button>
+              <div className={styles.actionControls}>
+                <p id="action-input-hint" className={styles.actionHint}>
+                  <kbd>Enter</kbd> to send · <kbd>Shift + Enter</kbd> for a new line
+                </p>
+                <span role="status">{submitting ? 'The world responds...' : ''}</span>
+                <button type="submit" aria-label="Send action"
+                  title="Send action (Enter)" disabled={submitting || !action.trim()}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+                    strokeLinejoin="round" aria-hidden="true" focusable="false">
+                    <path d="m5 12 7-7 7 7M12 5v14" />
+                  </svg>
+                </button>
+              </div>
             </form>
           </> : <div className={styles.ended} role="status">
             <h3>{game.endReason === 'character_died' ? 'Your character has died.' : 'Adventure ended.'}</h3>

@@ -82,8 +82,10 @@ and status; moving, removing, or killing them is not currently modeled.
 ### History and continuity
 
 The full literal action/narration record is retained for display and debugging.
-A separate overview of at most 1500 characters is generated from the entire
-saved history, emphasizing recent events and retaining relevant goals and clues.
+A separate continuity summary of at most 24000 characters is generated from the
+entire saved history. It grows with the story, retaining names, relationships,
+plot details, meaningful dialogue, goals, clues, and thread resolutions rather
+than dropping older details prematurely.
 It is background, not authority over current state or instructions to replay.
 
 Narration returns without waiting for post-turn summary preparation. The next

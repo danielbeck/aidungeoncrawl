@@ -1791,9 +1791,12 @@ class GameEngineTests(unittest.TestCase):
         })
         self.assertEqual(call.run('{"completed_history":[]}').data,
                          {'summary': 'The player waited.'})
-        self.assertEqual(call.response_format['properties']['summary']['maxLength'], 1500)
+        self.assertEqual(call.response_format['properties']['summary']['maxLength'], 24000)
+        for length in (1501, 12000, 24000):
+            summary = {'summary': 'x' * length}
+            self.assertEqual(call.validate_response(summary), summary)
         for response in ({}, {'summary': None}, {'summary': ' '},
-                         {'summary': 'x' * 1501}, {'summary': 'ok', 'extra': True}):
+                         {'summary': 'x' * 24001}, {'summary': 'ok', 'extra': True}):
             with self.subTest(response=response), self.assertRaises(LLMError):
                 call.validate_response(response)
 

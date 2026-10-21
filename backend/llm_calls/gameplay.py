@@ -166,8 +166,8 @@ class HistorySummarizerCall(LLMCall):
     def validate_response(data):
         if (not isinstance(data, dict) or set(data) != {'summary'}
                 or not isinstance(data['summary'], str) or not data['summary'].strip()
-                or len(data['summary']) > 1500):
+                or len(data['summary']) > 24000):
             raise LLMResponseError(
                 'history_summarizer: response must contain only a non-empty summary '
-                'of at most 1500 characters.', details=data)
+                'of at most 24000 characters.', details=data)
         return data

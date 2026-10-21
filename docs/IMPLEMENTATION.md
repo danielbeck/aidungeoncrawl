@@ -219,8 +219,12 @@ sequenceDiagram
 
 The Summarizer receives the full saved literal history, not a sliding window
 or previous summary. It produces only `summary`, a non-empty string of at most
-1500 characters, emphasizing recent exchanges while retaining active goals,
-clues, puzzle details, and unresolved threads. Failed in-world attempts are
+24000 characters. Length grows with the adventure, preserving character names
+and aliases, relationships, meaningful dialogue, plot causes and consequences,
+active goals, clues, puzzle details, and resolved and unresolved threads.
+Repetitive scenery is compressed before meaningful facts; short and moderate
+histories should retain plot and identity details rather than favoring recency.
+Failed in-world attempts are
 completed events; processing failures are not.
 
 `POST /game/prepare` takes `game_id` and runs in a separate request, compatible

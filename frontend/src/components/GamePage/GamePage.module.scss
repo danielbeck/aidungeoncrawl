@@ -110,6 +110,7 @@
 }
 
 .actionForm {
+  position: relative;
   border-top: 1px solid #e9e3da;
   display: grid;
   gap: 10px;
@@ -125,7 +126,7 @@
     border-radius: 8px;
     font: inherit;
     line-height: 1.5;
-    padding: 12px;
+    padding: 12px 60px 48px 12px;
     resize: vertical;
 
     &:focus {
@@ -139,7 +140,8 @@
     background: #405f48;
     color: #fff;
     min-height: 48px;
-    padding: 12px 24px;
+    min-width: 48px;
+    padding: 12px;
     border: 0;
     border-radius: 8px;
     font: inherit;
@@ -154,6 +156,42 @@
       outline: 3px solid #53765f;
       outline-offset: 3px;
     }
+  }
+}
+
+.actionControls {
+  position: absolute;
+  bottom: 28px;
+  left: 36px;
+  right: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+
+  button {
+    pointer-events: auto;
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    min-width: 44px;
+    padding: 8px;
+  }
+}
+
+.actionHint {
+  color: #554f47;
+  font-size: 0.85rem;
+  margin: 0;
+
+  kbd {
+    font: inherit;
+    background: #f8f5ef;
+    border: 1px solid #cfc5b7;
+    border-radius: 4px;
+    padding: 2px 4px;
   }
 }
 
@@ -289,6 +327,69 @@
   }
 }
 
+@media (min-width: 761px) {
+  .game {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    height: calc(100dvh - 2rem - 32px);
+    margin-bottom: 0;
+    padding-bottom: 0;
+  }
+
+  .heading {
+    flex-shrink: 0;
+  }
+
+  .layout {
+    align-items: stretch;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .story {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0;
+  }
+
+  .storyContent {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 24px;
+    scrollbar-gutter: stable;
+  }
+
+  .actionForm,
+  .ended {
+    flex-shrink: 0;
+    margin: 0;
+    padding: 20px 24px;
+  }
+
+  .actionForm textarea {
+    max-height: 25dvh;
+  }
+
+  .actionForm {
+    display: block;
+
+    textarea {
+      box-sizing: border-box;
+      display: block;
+      width: 100%;
+    }
+  }
+
+  .sidebar {
+    align-content: start;
+    overflow-y: auto;
+  }
+}
+
 @media (max-width: 760px) {
   .game {
     margin-top: 20px;
@@ -309,5 +410,11 @@
 
   .heading {
     align-items: start;
+  }
+
+  .actionControls {
+    bottom: 4px;
+    left: 12px;
+    right: 8px;
   }
 }
