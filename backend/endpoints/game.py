@@ -8,16 +8,21 @@ import uuid
 from flask import Blueprint, Response, current_app, jsonify, request, session
 
 try:
+    from backend.direct_mode import process_direct_turn
+    from backend.freeform_mode import process_freeform_turn
     from backend.game_engine import InvalidTurnResponse, new_game, process_turn
     from backend.harness.llm_provider import LLMError
     from backend.llm_calls.gameplay import HistorySummarizerCall
 except ImportError:
+    from direct_mode import process_direct_turn
+    from freeform_mode import process_freeform_turn
     from game_engine import InvalidTurnResponse, new_game, process_turn
     from harness.llm_provider import LLMError
     from llm_calls.gameplay import HistorySummarizerCall
 
 
 bp = Blueprint('game', __name__, url_prefix='/game')
+MODES = ('managed', 'direct', 'freeform')
 
 
 def _stream_event(event):
@@ -158,6 +163,42 @@ def start_new_game():
         conn.close()
 
 
+@bp.route('/mode', methods=['POST'])
+def change_mode():
+    user_id = _user_id()
+    if not user_id:
+        return jsonify({'error': 'Authentication is required to play.'}), 401
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or data.get('mode') not in MODES:
+        return jsonify({'error': f'mode must be one of: {", ".join(MODES)}.'}), 400
+    if not isinstance(data.get('game_id'), str):
+        return jsonify({'error': 'game_id is required.'}), 400
+    conn = _get_db()
+    try:
+        conn.execute('BEGIN IMMEDIATE')
+        row = _load_row(conn, user_id)
+        if row is None:
+            conn.rollback()
+            return jsonify({'error': 'Start a game before changing mode.'}), 409
+        game = json.loads(row['state_json'])
+        if game['id'] != data['game_id']:
+            conn.rollback()
+            return jsonify({'error': 'The game has changed. Reload before changing mode.'}), 409
+        game['mode'] = data['mode']
+        conn.execute('''
+            UPDATE games SET state_json = ?, version = version + 1,
+                updated_at = CURRENT_TIMESTAMP WHERE user_id = ?
+        ''', (json.dumps(game, ensure_ascii=False), user_id))
+        conn.commit()
+        return jsonify({'game': game})
+    except sqlite3.Error:
+        conn.rollback()
+        current_app.logger.exception('Failed to change game mode for user %s', user_id)
+        return jsonify({'error': 'Unable to save the storytelling mode.'}), 500
+    finally:
+        conn.close()
+
+
 @bp.route('/prepare', methods=['POST'])
 def prepare_history():
     user_id = _user_id()
@@ -226,6 +267,9 @@ def play_turn():
     action = data.get('action')
     request_id = data.get('request_id')
     game_id = data.get('game_id')
+    mode = data.get('mode', 'managed')
+    if mode not in MODES:
+        return jsonify({'error': f'mode must be one of: {", ".join(MODES)}.'}), 400
     if not isinstance(action, str) or not action.strip() or len(action) > 2000:
         return jsonify({'error': 'action must contain 1 to 2000 characters.'}), 400
     if not isinstance(request_id, str):
@@ -266,20 +310,25 @@ def play_turn():
     if request.accept_mimetypes.best == 'application/x-ndjson':
         return _stream_turn(lambda on_progress: _complete_turn(
             user_id, game_id, request_id, action, original_state,
-            original_version, on_progress))
+            original_version, on_progress, mode))
     return _complete_turn(user_id, game_id, request_id, action,
-                          original_state, original_version)
+                          original_state, original_version, mode=mode)
 
 
 def _complete_turn(user_id, game_id, request_id, action, original_state,
-                   original_version, on_progress=None):
+                   original_version, on_progress=None, mode='managed'):
     current_app.logger.info('Starting gameplay turn for user %s, game %s', user_id, game_id)
     try:
         options = {'settings': current_app.config['llm_settings']}
         if on_progress is not None:
             options['on_progress'] = on_progress
-        updated_state, result = process_turn(
-            original_state, action, **options)
+        processor = {
+            'managed': process_turn,
+            'direct': process_direct_turn,
+            'freeform': process_freeform_turn,
+        }[mode]
+        updated_state, result = processor(original_state, action, **options)
+        updated_state['mode'] = mode
     except LLMError as error:
         current_app.logger.error('LLM gameplay turn failed for user %s: %s', user_id, error)
         return jsonify({
@@ -301,6 +350,7 @@ def _complete_turn(user_id, game_id, request_id, action, original_state,
         'game': updated_state,
         'turn': {
             'action': action.strip(),
+            'mode': mode,
             **result,
         },
     }

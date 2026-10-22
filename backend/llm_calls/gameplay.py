@@ -171,3 +171,47 @@ class HistorySummarizerCall(LLMCall):
                 'history_summarizer: response must contain only a non-empty summary '
                 'of at most 24000 characters.', details=data)
         return data
+
+
+class FreeformNarratorCall(LLMCall):
+    name = 'freeform_narrator'
+
+    @staticmethod
+    def validate_response(data):
+        if not isinstance(data, str) or not data.strip():
+            raise LLMResponseError(
+                'freeform_narrator: narration must be non-empty text.', details=data)
+        return data.strip()
+
+
+class DirectNarratorCall(LLMCall):
+    """One-pass narration that also returns the complete updated world."""
+    name = 'direct_narrator'
+
+    @staticmethod
+    def validate_response(data):
+        required = {'narration', 'action_succeeded', 'game_over', 'currentLocationId',
+                    'locations', 'items', 'objects', 'npcs'}
+        if not isinstance(data, dict) or set(data) != required:
+            raise LLMResponseError(
+                f'direct_narrator: response must contain exactly {", ".join(sorted(required))}.',
+                details=data)
+        if not isinstance(data['narration'], str) or not data['narration'].strip():
+            raise LLMResponseError('direct_narrator: narration must be non-empty text.', details=data)
+        if not isinstance(data['action_succeeded'], bool) or not isinstance(data['game_over'], bool):
+            raise LLMResponseError(
+                'direct_narrator: action_succeeded and game_over must be booleans.', details=data)
+        if not isinstance(data['currentLocationId'], str):
+            raise LLMResponseError('direct_narrator: currentLocationId must be a string.', details=data)
+        for collection in ('locations', 'items', 'objects', 'npcs'):
+            entries = data[collection]
+            if not isinstance(entries, list) or not all(
+                    isinstance(entry, dict)
+                    and isinstance(entry.get('id'), str) and entry['id'].strip()
+                    and isinstance(entry.get('name'), str) and entry['name'].strip()
+                    and isinstance(entry.get('description'), str)
+                    for entry in entries):
+                raise LLMResponseError(
+                    f'direct_narrator: every {collection} entry needs id, name, and description.',
+                    details=data)
+        return data

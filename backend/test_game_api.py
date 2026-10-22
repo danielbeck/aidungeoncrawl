@@ -99,6 +99,50 @@ class GameApiTests(unittest.TestCase):
             'request_id': 'efb74c49-3e11-4bf1-b72f-447e4b632c08',
         }).status_code, 400)
 
+    def test_freeform_turn_persists_and_can_switch_back_to_managed(self):
+        game = self.client.get('/game/').get_json()['game']
+
+        def resolve(state, action, **options):
+            return state, {'narration': 'The story continues.'}
+
+        with patch('backend.endpoints.game.process_freeform_turn', side_effect=resolve) as freeform:
+            response = self.client.post('/game/turn', json={
+                'action': 'Wait.', 'game_id': game['id'], 'mode': 'freeform',
+                'request_id': 'efb74c49-3e11-4bf1-b72f-447e4b632c08',
+            })
+        self.assertEqual(response.status_code, 200)
+        freeform.assert_called_once()
+        saved = self.client.get('/game/').get_json()['game']
+        self.assertEqual(saved['mode'], 'freeform')
+        self.assertEqual(saved['world'], game['world'])
+        with patch('backend.endpoints.game.process_turn', side_effect=resolve) as managed:
+            response = self.client.post('/game/turn', json={
+                'action': 'Look around.', 'game_id': game['id'], 'mode': 'managed',
+                'request_id': '7b71fd0e-a2d9-46b0-859d-c67be5a3c74f',
+            })
+        self.assertEqual(response.status_code, 200)
+        managed.assert_called_once()
+        self.assertEqual(response.get_json()['game']['mode'], 'managed')
+
+    def test_mode_selection_persists_without_a_turn(self):
+        game = self.client.get('/game/').get_json()['game']
+        for mode in ('freeform', 'direct', 'managed'):
+            response = self.client.post('/game/mode', json={
+                'game_id': game['id'], 'mode': mode,
+            })
+            self.assertEqual(response.status_code, 200)
+            saved = self.client.get('/game/').get_json()['game']
+            self.assertEqual(saved['mode'], mode)
+            self.assertEqual(saved['world'], game['world'])
+            self.assertEqual(saved['history'], game['history'])
+        self.assertEqual(self.client.post('/game/mode', json={
+            'game_id': 'old-game', 'mode': 'freeform',
+        }).status_code, 409)
+        self.assertEqual(self.client.post('/game/mode', json={
+            'game_id': game['id'], 'mode': 'unknown',
+        }).status_code, 400)
+        self.assertEqual(self.client.get('/game/').get_json()['game']['mode'], 'managed')
+
     def test_stream_reports_progress_before_commit_and_replays_completed_request(self):
         game = self.client.get('/game/').get_json()['game']
         body = {'action': 'Look around.', 'game_id': game['id'],

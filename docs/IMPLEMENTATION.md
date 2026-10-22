@@ -20,6 +20,21 @@ below; broader product goals are distinguished in [Product Spec](PRODUCT_SPEC.md
 
 ## LLM components and contracts
 
+### Freeform mode
+
+Mode selection is saved immediately through `POST /game/mode`, independently
+of successful story turns, and restored on reload. Changing mode increments the
+game revision so an older in-flight turn cannot overwrite the selection.
+New games reset to Managed.
+
+The mode switch can select `freeform` for any turn. It makes one plain-text
+`freeform_narrator` call with the full literal transcript as conversation messages
+and the current action. No world state or summary is sent, and no manager,
+comparator, or summarizer is called. The response is appended to the transcript;
+tracked locations, items, NPCs, objects, exits, movement history, and game-over
+status are left untouched. The sidebar still shows the last tracked state and
+may be stale. Switching back does not reconstruct missed world changes.
+
 System prompts, user-message templates, and optional response schemas live in
 `shared/llm/`, named after each call. A call's `<name>.input.md` template uses
 `{{input}}` where the serialized call input should go.
@@ -108,6 +123,12 @@ Animals and mounts are NPCs. Reports identify entities; they do not update
 existing NPC location/status or model motivations.
 
 ### Narrator
+
+The managed narrator privately considers plausible future storylines rooted in
+the current action and existing threads, then seeds concrete, motivating leads
+in the narration. Engaging with a lead should produce discoveries and progress,
+not repeated portents. These possibilities adapt to player choices; they are
+not stored plans and do not authorize unsupported persistent state changes.
 
 Receives the action and summary once each, history-free `resolved_context`,
 resolved/ignored interactions, and movement outcome/resolution. The context

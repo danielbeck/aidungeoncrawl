@@ -13,11 +13,20 @@ const progressComponentLabels = {
   comparator: 'Entity matcher',
   turn: 'Turn',
   summarizer: 'History summarizer',
+  direct_narrator: 'Direct narrator',
+  freeform_narrator: 'Freeform narrator',
 }
+
+const modeOptions = [
+  { value: 'managed', label: 'Managed', title: 'Managers interpret the action, code applies changes, then the narrator describes them.' },
+  { value: 'direct', label: 'Direct', title: 'One narrator call describes the outcome and returns the whole updated world.' },
+  { value: 'freeform', label: 'Freeform', title: 'Continue the story without updating tracked world state. Existing world data will go stale.' },
+]
 
 function GamePage() {
   const [game, setGame] = useState(null)
   const [action, setAction] = useState('')
+  const [mode, setMode] = useState('managed')
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -67,6 +76,7 @@ function GamePage() {
     try {
       const data = await fetchAPI('/game/', { credentials: 'include' })
       setGame(data.game)
+      if (data.game.mode) setMode(data.game.mode)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -112,6 +122,7 @@ function GamePage() {
         action: action.trim(),
         game_id: game.id,
         request_id: requestId.current,
+        mode,
       }, event => {
         if (event.component === 'comparator' && event.llm === false
           && event.status !== 'started' && event.status !== 'failed') return
@@ -131,7 +142,8 @@ function GamePage() {
           movement_outcome: data.turn.movement_outcome,
         },
       })))
-      void prepareHistory(data.game.id, revision)
+      // Only managed turns need a prepared summary.
+      if (mode === 'managed') void prepareHistory(data.game.id, revision)
     } catch (err) {
       setError(err.message)
       setProgress(events => finishProgress(events, err.message))
@@ -146,10 +158,31 @@ function GamePage() {
     try {
       const data = await fetchAPI('/game/new', { method: 'POST', credentials: 'include' })
       setGame(data.game)
+      setMode(data.game.mode || 'managed')
       setAction('')
       setProgress([])
       progressRevision.current += 1
       requestId.current = null
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const changeMode = async (nextMode) => {
+    if (submitting || nextMode === mode) return
+    setSubmitting(true)
+    setError('')
+    requestId.current = null
+    progressRevision.current += 1
+    try {
+      const data = await fetchAPI('/game/mode', {
+        method: 'POST', credentials: 'include',
+        body: JSON.stringify({ game_id: game.id, mode: nextMode }),
+      })
+      setGame(data.game)
+      setMode(data.game.mode)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -164,7 +197,18 @@ function GamePage() {
     <section className={styles.game} aria-label="Adventure">
       <header className={styles.heading}>
         <div>
-          <p className={styles.eyebrow}>Your adventure</p>
+          <p className={styles.eyebrow}>Your&nbsp;
+            <fieldset className={styles.modeSwitch} disabled={submitting}>
+              <legend>Storytelling mode</legend>
+              {modeOptions.map(option => <label key={option.value} title={option.title}>
+                <input type="radio" name="mode" value={option.value}
+                  checked={mode === option.value}
+                  onChange={() => changeMode(option.value)} />
+                {option.label}
+              </label>)}
+            </fieldset>
+            &nbsp;adventure
+          </p>
           <h2>{location?.name || 'Unknown location'}</h2>
         </div>
         <button className={styles.secondaryButton} type="button" onClick={startNewGame} disabled={submitting}>
@@ -206,7 +250,6 @@ function GamePage() {
                   })}
                 </span>
               </summary>
-              <p>Intermediate responses are debug information, not committed game state.</p>
               <ol role="log" aria-live="polite" aria-relevant="additions text">
                 {progress.map((event, index) => (
                   <li key={index} aria-busy={isProgressPending(event)}>

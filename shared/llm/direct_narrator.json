@@ -1,0 +1,116 @@
+{
+  "type": "object",
+  "properties": {
+    "narration": {
+      "type": "string",
+      "description": "Player-facing narration of this turn's outcome.",
+      "minLength": 1
+    },
+    "action_succeeded": {
+      "type": "boolean",
+      "description": "Whether the player's overall intent succeeded."
+    },
+    "game_over": {
+      "type": "boolean",
+      "description": "Whether the character died and the game ended."
+    },
+    "currentLocationId": {
+      "type": "string",
+      "description": "ID of the location the player is in after this turn. Must be the id of an entry in locations."
+    },
+    "locations": {
+      "type": "array",
+      "description": "Every known location after this turn, including unchanged ones.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string", "description": "Keep existing IDs. New locations need a new unique ID."},
+          "name": {"type": "string"},
+          "description": {"type": "string"},
+          "aliases": {"type": "array", "items": {"type": "string"}},
+          "visited": {"type": "boolean"},
+          "exits": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {"type": "string"},
+                "description": {"type": "string", "description": "How the exit appears, e.g. 'A heavy oak door to the tavern'."},
+                "destinationId": {"type": ["string", "null"], "description": "ID of the connected location, or null if unexplored."},
+                "traversable": {"type": "boolean", "description": "False when the route is blocked."},
+                "identified": {"type": "boolean", "description": "Whether the player has noticed this exit."}
+              },
+              "required": ["id", "description", "destinationId", "traversable", "identified"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["id", "name", "description", "aliases", "visited", "exits"],
+        "additionalProperties": false
+      }
+    },
+    "items": {
+      "type": "array",
+      "description": "Every item that still exists after this turn. Omit consumed or destroyed items.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "name": {"type": "string"},
+          "description": {"type": "string"},
+          "aliases": {"type": "array", "items": {"type": "string"}},
+          "knownByPlayer": {"type": "boolean"},
+          "holder": {
+            "type": "object",
+            "description": "Who or where holds the item. type player uses player_id; location uses a location id; npc uses an npc id.",
+            "properties": {
+              "type": {"type": "string", "enum": ["player", "location", "npc"]},
+              "id": {"type": "string"}
+            },
+            "required": ["type", "id"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "name", "description", "aliases", "knownByPlayer", "holder"],
+        "additionalProperties": false
+      }
+    },
+    "objects": {
+      "type": "array",
+      "description": "Every fixed, non-portable feature (furniture, doors, chests, etc.) after this turn.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "name": {"type": "string"},
+          "description": {"type": "string"},
+          "aliases": {"type": "array", "items": {"type": "string"}},
+          "locationId": {"type": "string"},
+          "knownByPlayer": {"type": "boolean"},
+          "containedInObjectId": {"type": ["string", "null"]}
+        },
+        "required": ["id", "name", "description", "aliases", "locationId", "knownByPlayer", "containedInObjectId"],
+        "additionalProperties": false
+      }
+    },
+    "npcs": {
+      "type": "array",
+      "description": "Every known character or creature after this turn, including those elsewhere.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "name": {"type": "string"},
+          "description": {"type": "string"},
+          "aliases": {"type": "array", "items": {"type": "string"}},
+          "currentLocationId": {"type": "string"},
+          "status": {"type": "string", "enum": ["active", "departed", "dead"]}
+        },
+        "required": ["id", "name", "description", "aliases", "currentLocationId", "status"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["narration", "action_succeeded", "game_over", "currentLocationId", "locations", "items", "objects", "npcs"],
+  "additionalProperties": false
+}

@@ -17,24 +17,25 @@ try:
     from backend.harness.llm_calls import LLMCall, LLMResponseError, LLMResult
     from backend.llm_calls.gameplay import (
         ComparatorCall, InventoryManagerCall, MapManagerCall, NPCManagerCall, NarratorCall,
-        HistorySummarizerCall, MovementResolverCall,
+        HistorySummarizerCall, MovementResolverCall, DirectNarratorCall, FreeformNarratorCall,
     )
     from backend.harness.history import MessageHistory
 except ImportError:
     from harness.llm_calls import LLMCall, LLMResponseError, LLMResult
     from llm_calls.gameplay import (
         ComparatorCall, InventoryManagerCall, MapManagerCall, NPCManagerCall, NarratorCall,
-        HistorySummarizerCall, MovementResolverCall,
+        HistorySummarizerCall, MovementResolverCall, DirectNarratorCall, FreeformNarratorCall,
     )
     from harness.history import MessageHistory
 
 REGISTRY = {call.name: call for call in (
     ComparatorCall, InventoryManagerCall, MapManagerCall, NPCManagerCall, NarratorCall,
-    HistorySummarizerCall, MovementResolverCall,
+    HistorySummarizerCall, MovementResolverCall, DirectNarratorCall, FreeformNarratorCall,
 )}
 
 __all__ = [
     'LLMCall', 'LLMResponseError', 'LLMResult', 'MessageHistory', 'ComparatorCall',
     'InventoryManagerCall', 'MapManagerCall', 'NPCManagerCall', 'NarratorCall',
-    'HistorySummarizerCall', 'MovementResolverCall', 'REGISTRY',
+    'HistorySummarizerCall', 'MovementResolverCall', 'DirectNarratorCall',
+    'FreeformNarratorCall', 'REGISTRY',
 ]

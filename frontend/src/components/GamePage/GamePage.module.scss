@@ -181,6 +181,58 @@
   }
 }
 
+.modeSwitch {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  padding: 2px;
+  border: 1px solid #cfc5b7;
+  border-radius: 6px;
+  background: #f8f5ef;
+  font-size: 0.85rem;
+
+  legend {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  label {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 4px;
+    color: #554f47;
+    cursor: pointer;
+
+    &:has(input:checked) {
+      background: #405f48;
+      color: #fff;
+    }
+
+    &:has(input:focus-visible) {
+      outline: 2px solid #53765f;
+      outline-offset: 1px;
+    }
+  }
+
+  input {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+  }
+
+  &:disabled label {
+    cursor: default;
+    opacity: 0.6;
+  }
+}
+
 .actionHint {
   color: #554f47;
   font-size: 0.85rem;
