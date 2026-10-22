@@ -72,6 +72,27 @@ class FakeTransport:
 
 
 class LLMCallTests(unittest.TestCase):
+    def test_new_instances_pick_up_definition_edits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            call_class = type('EditableCall', (LLMCall,), {
+                'name': 'editable', 'definitions_dir': directory,
+            })
+            prompt_path = os.path.join(directory, 'editable.md')
+            with open(prompt_path, 'w') as prompt:
+                prompt.write('Original prompt.')
+            first = call_class(transport=FakeTransport('ok'))
+            with open(prompt_path, 'w') as prompt:
+                prompt.write('Updated prompt.')
+            with open(os.path.join(directory, 'editable.json'), 'w') as schema:
+                json.dump(SCHEMA, schema)
+            with open(os.path.join(directory, 'editable.input.md'), 'w') as template:
+                template.write('Updated input: {{input}}')
+            second = call_class(transport=FakeTransport('ok'))
+            self.assertEqual(first.system_prompt, 'Original prompt.')
+            self.assertEqual(second.system_prompt, 'Updated prompt.')
+            self.assertEqual(second.response_format, SCHEMA)
+            self.assertEqual(second.format_user_input('action'), 'Updated input: action')
+
     def test_requires_name(self):
         with self.assertRaisesRegex(TypeError, 'name'):
             TestCall(transport=FakeTransport(''))

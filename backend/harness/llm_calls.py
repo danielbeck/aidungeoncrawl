@@ -80,13 +80,7 @@ class LLMCall(ABC):
 
     @classmethod
     def load_definition(cls):
-        """Read and cache the system prompt, input template, and schema
-        associated with this call."""
-        cache_key = (cls.definitions_dir, cls.name)
-        cached = cls.__dict__.get('_definition_cache')
-        if cached and cached[0] == cache_key:
-            return cached[1]
-
+        """Read current definitions so prompt edits apply to the next call."""
         base_path = os.path.join(cls.definitions_dir, cls.name)
         try:
             with open(f'{base_path}.md', encoding='utf-8') as prompt_file:
@@ -112,9 +106,7 @@ class LLMCall(ABC):
                 raise TypeError(
                     f'{cls.__name__}: {input_path} must contain exactly one {{{{input}}}} placeholder.')
 
-        definition = (system_prompt, response_format, user_input_template)
-        cls._definition_cache = (cache_key, definition)
-        return definition
+        return system_prompt, response_format, user_input_template
 
     def build_system_prompt(self) -> str:
         """The hardcoded prompt, plus the JSON schema when `response_format`

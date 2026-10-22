@@ -38,6 +38,8 @@ may be stale. Switching back does not reconstruct missed world changes.
 System prompts, user-message templates, and optional response schemas live in
 `shared/llm/`, named after each call. A call's `<name>.input.md` template uses
 `{{input}}` where the serialized call input should go.
+Definitions are read when a call instance is created, so edits to prompts,
+templates, and schemas apply to subsequent instances without a backend restart.
 [Shared definitions](../shared/README.md) explains loading and deployment.
 
 ### Inventory manager
@@ -129,6 +131,8 @@ the current action and existing threads, then seeds concrete, motivating leads
 in the narration. Engaging with a lead should produce discoveries and progress,
 not repeated portents. These possibilities adapt to player choices; they are
 not stored plans and do not authorize unsupported persistent state changes.
+Inspection, questions, and successful opening actions should produce specific
+observable answers in the same response, not defer the payoff to more portents.
 
 Receives the action and summary once each, history-free `resolved_context`,
 resolved/ignored interactions, and movement outcome/resolution. The context
