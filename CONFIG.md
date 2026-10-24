@@ -107,6 +107,11 @@ SMTP settings. For link expiry, password rules, and account behavior, see the
 | `OPENROUTER_URL`, `OPENROUTER_MODEL` | OpenRouter endpoint and model. |
 | `OPENROUTER_API_KEY` | Private OpenRouter credential. |
 
+OpenRouter requests send `HTTP-Referer` using `PRODUCTION_DOMAIN` plus
+`DEPLOY_SUB_DIR` (for example, `https://example.com/game1/`). Deployment includes
+both settings in the private backend configuration. Without `PRODUCTION_DOMAIN`,
+the header defaults to `http://localhost:3000`.
+
 See `.env.example` for defaults. Prompts and response schemas live in
 `shared/llm/`; see [shared definitions](shared/README.md).
 

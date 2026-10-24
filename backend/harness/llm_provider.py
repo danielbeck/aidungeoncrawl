@@ -36,6 +36,8 @@ def get_llm_config(settings):
     if provider not in ('ollama', 'openrouter'):
         provider = 'openrouter' if settings.get('FLASK_ENV') == 'production' else 'ollama'
 
+    domain = (settings.get('PRODUCTION_DOMAIN') or '').strip().rstrip('/')
+    sub_dir = (settings.get('DEPLOY_SUB_DIR') or '').strip('/')
     return {
         'provider': provider,
         'ollama_url': settings.get('OLLAMA_URL') or DEFAULT_OLLAMA_URL,
@@ -43,6 +45,7 @@ def get_llm_config(settings):
         'openrouter_url': settings.get('OPENROUTER_URL') or DEFAULT_OPENROUTER_URL,
         'openrouter_api_key': settings.get('OPENROUTER_API_KEY'),
         'openrouter_model': settings.get('OPENROUTER_MODEL') or DEFAULT_OPENROUTER_MODEL,
+        'http_referer': f"{domain}/{sub_dir + '/' if sub_dir else ''}" if domain else None,
     }
 
 

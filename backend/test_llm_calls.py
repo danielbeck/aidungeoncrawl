@@ -393,6 +393,22 @@ class ProviderChatTests(unittest.TestCase):
         self.assertEqual(payload['messages'], [{'role': 'user', 'content': 'prompt'}])
         self.assertEqual(payload['format'], {'type': 'object'})
 
+    def test_openrouter_referer_uses_deployment_url(self):
+        for domain, sub_dir, expected in (
+                ('https://example.com', 'game1/', 'https://example.com/game1/'),
+                (' https://example.com/// ', '/game1/', 'https://example.com/game1/'),
+                ('https://example.com/', '', 'https://example.com/'),
+                ('', 'game1/', 'http://localhost:3000')):
+            with self.subTest(domain=domain, sub_dir=sub_dir):
+                settings = {
+                    'LLM_PROVIDER': 'openrouter', 'OPENROUTER_API_KEY': 'test-key',
+                    'PRODUCTION_DOMAIN': domain, 'DEPLOY_SUB_DIR': sub_dir,
+                }
+                reply = {'choices': [{'message': {'content': 'hi'}}]}
+                with patch.object(llm_provider, '_post_json', return_value=reply) as post:
+                    llm_provider.chat(self.MESSAGES, settings=settings)
+                self.assertEqual(post.call_args[1]['headers']['HTTP-Referer'], expected)
+
     def test_temperature_override_reaches_both_providers_without_mutating_config(self):
         for provider, reply in (
                 ('ollama', {'message': {'content': 'hi'}}),
