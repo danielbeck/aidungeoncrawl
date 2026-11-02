@@ -254,6 +254,30 @@
   padding: 9px 14px;
 }
 
+.newGameForm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+
+  label {
+    flex-basis: 100%;
+    font-size: 0.85rem;
+    color: #6c6256;
+  }
+
+  select {
+    min-width: 0;
+    max-width: 100%;
+    padding: 8px;
+    border: 1px solid #cfc5b7;
+    border-radius: 6px;
+    background: #f8f5ef;
+    color: inherit;
+    font: inherit;
+  }
+}
+
 .sidebar {
   display: grid;
   gap: 20px;
@@ -462,6 +486,7 @@
 
   .heading {
     align-items: start;
+    flex-wrap: wrap;
   }
 
   .actionControls {

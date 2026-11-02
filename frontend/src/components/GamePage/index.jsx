@@ -27,6 +27,7 @@ function GamePage() {
   const [game, setGame] = useState(null)
   const [action, setAction] = useState('')
   const [mode, setMode] = useState('managed')
+  const [startingPoint, setStartingPoint] = useState('town')
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -152,11 +153,16 @@ function GamePage() {
     }
   }
 
-  const startNewGame = async () => {
+  const startNewGame = async (event) => {
+    event.preventDefault()
+    if (submitting) return
     setSubmitting(true)
     setError('')
     try {
-      const data = await fetchAPI('/game/new', { method: 'POST', credentials: 'include' })
+      const data = await fetchAPI('/game/new', {
+        method: 'POST', credentials: 'include',
+        body: JSON.stringify({ starting_point: startingPoint }),
+      })
       setGame(data.game)
       setMode(data.game.mode || 'managed')
       setAction('')
@@ -211,9 +217,18 @@ function GamePage() {
           </p>
           <h2>{location?.name || 'Unknown location'}</h2>
         </div>
-        <button className={styles.secondaryButton} type="button" onClick={startNewGame} disabled={submitting}>
-          New game
-        </button>
+        <form className={styles.newGameForm} onSubmit={startNewGame}>
+          <label htmlFor="starting-point">New adventure starting point</label>
+          <select id="starting-point" value={startingPoint}
+            onChange={event => setStartingPoint(event.target.value)} disabled={submitting}>
+            <option value="town">Town square outside the tavern</option>
+            <option value="wilderness">Wilderness exploration</option>
+            <option value="dungeon">Dungeon / lair entrance</option>
+          </select>
+          <button className={styles.secondaryButton} type="submit" disabled={submitting}>
+            New game
+          </button>
+        </form>
       </header>
 
       <div className={styles.layout}>

@@ -34,6 +34,29 @@ except ImportError:
 
 
 START_LOCATION_ID = 'town-square-outside-tavern'
+STARTING_POINTS = {
+    'town': {
+        'id': START_LOCATION_ID,
+        'name': 'Town Square Outside the Tavern',
+        'description': 'The town square outside the tavern.',
+        'aliases': ['town square'],
+        'narration': 'You stand in the town square outside the tavern. The tavern door is nearby, and the square is open around you.',
+    },
+    'wilderness': {
+        'id': 'wilderness-trail',
+        'name': 'Wilderness Trail',
+        'description': 'A winding trail through untamed wilderness, far from town.',
+        'aliases': ['wilderness'],
+        'narration': 'You are exploring the wilderness along a winding trail. Trees and tangled undergrowth surround you, and the path continues into the unknown.',
+    },
+    'dungeon': {
+        'id': 'dungeon-entrance',
+        'name': 'Dungeon Entrance',
+        'description': 'The entrance to a dungeon or lair, opening into a rocky hillside.',
+        'aliases': ['lair entrance'],
+        'narration': 'You stand at the entrance to a dungeon or lair. A dark opening leads into the rocky hillside before you, while the open countryside lies behind you.',
+    },
+}
 logger = logging.getLogger(__name__)
 
 
@@ -41,19 +64,22 @@ class InvalidTurnResponse(ValueError):
     """Raised when an LLM response cannot be reconciled safely."""
 
 
-def new_game(player_id):
+def new_game(player_id, starting_point='town'):
+    if not isinstance(starting_point, str) or starting_point not in STARTING_POINTS:
+        raise ValueError(f'starting_point must be one of: {", ".join(STARTING_POINTS)}.')
+    start = STARTING_POINTS[starting_point]
     return {
         'id': str(uuid.uuid4()),
         'playerId': str(player_id),
-        'currentLocationId': START_LOCATION_ID,
+        'currentLocationId': start['id'],
         'status': 'active',
         'endReason': None,
         'world': {
             'locations': [{
-                'id': START_LOCATION_ID,
-                'name': 'Town Square Outside the Tavern',
-                'description': 'The town square outside the tavern.',
-                'aliases': ['town square'],
+                'id': start['id'],
+                'name': start['name'],
+                'description': start['description'],
+                'aliases': list(start['aliases']),
                 'visited': True,
                 'exits': [],
             }],
@@ -64,7 +90,7 @@ def new_game(player_id):
         'history': {
             'recentEvents': [{
                 'kind': 'narration',
-                'content': 'You stand in the town square outside the tavern. The tavern door is nearby, and the square is open around you.',
+                'content': start['narration'],
             }],
         },
     }

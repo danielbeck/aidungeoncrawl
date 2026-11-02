@@ -87,6 +87,28 @@ class GameApiTests(unittest.TestCase):
         self.assertNotEqual(changed_game['id'], game['id'])
         self.assertEqual(stale.status_code, 409)
 
+    def test_selected_starting_point_persists(self):
+        for starting_point, location_id in (
+                ('town', 'town-square-outside-tavern'),
+                ('wilderness', 'wilderness-trail'),
+                ('dungeon', 'dungeon-entrance')):
+            with self.subTest(starting_point=starting_point):
+                response = self.client.post('/game/new', json={'starting_point': starting_point})
+                self.assertEqual(response.status_code, 200)
+                game = response.get_json()['game']
+                self.assertEqual(game['currentLocationId'], location_id)
+                self.assertEqual(self.client.get('/game/').get_json()['game'], game)
+
+    def test_invalid_starting_point_does_not_replace_saved_game(self):
+        game = self.client.get('/game/').get_json()['game']
+        for body in ({'starting_point': 'unknown'}, {'starting_point': None},
+                     {'starting_point': []}, {'starting_point': {}}, [], 'wilderness'):
+            with self.subTest(body=body):
+                self.assertEqual(self.client.post('/game/new', json=body).status_code, 400)
+        self.assertEqual(self.client.post(
+            '/game/new', data='{', content_type='application/json').status_code, 400)
+        self.assertEqual(self.client.get('/game/').get_json()['game'], game)
+
     def test_turn_rejects_invalid_requests_without_llm_calls(self):
         game = self.client.get('/game/').get_json()['game']
         self.assertEqual(self.client.post('/game/turn', json={

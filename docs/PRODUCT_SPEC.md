@@ -24,9 +24,12 @@ These are experience goals, not permission to claim unsupported state changes.
 
 ### Starting and ending
 
-New games begin at `town-square-outside-tavern`, displayed as "Town Square
-Outside the Tavern", with empty inventory. Plausible starting equipment can be
-established through a supported acquisition action.
+Players choose a starting point beside **New game**: the town square outside the
+tavern (the default), wilderness exploration, or a dungeon / lair entrance.
+The choice sets the initial location and opening narration, with empty inventory.
+Loading an account without a saved adventure still initializes the town-square
+start. Plausible starting equipment can be established through a supported
+acquisition action.
 
 The adventure is saved to the authenticated account. Starting a new game replaces
 the current adventure. A game ends when the character dies or the player stops

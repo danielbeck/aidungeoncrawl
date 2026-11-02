@@ -75,10 +75,14 @@ All gameplay endpoints require an authenticated session.
 | Endpoint | Purpose |
 |---|---|
 | `GET /game/` | Load or initialize the user's saved adventure. |
-| `POST /game/new` | Replace it with a fresh adventure. |
+| `POST /game/new` | Replace it with a fresh adventure; optional JSON `starting_point`: `town` (default), `wilderness`, or `dungeon`. |
 | `POST /game/turn` | Process `action`, `game_id`, and UUID `request_id`. |
 | `POST /game/prepare` | Prepare summarized history for `game_id`. |
 | `POST /game/stop` | End the adventure. |
+
+The starting point sets both the initial location and opening narration for all
+storytelling modes. An omitted body or field preserves the town-square default;
+invalid starting points return HTTP 400 without replacing the saved adventure.
 
 ```bash
 curl -b cookies.txt -c cookies.txt http://localhost:8000/game/

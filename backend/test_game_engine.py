@@ -80,6 +80,32 @@ def contains_key(value, key):
 
 
 class GameEngineTests(unittest.TestCase):
+    def test_starting_points_initialize_consistent_independent_worlds(self):
+        for starting_point, location_id, name, opening in (
+                ('town', 'town-square-outside-tavern', 'Town Square Outside the Tavern', 'town square'),
+                ('wilderness', 'wilderness-trail', 'Wilderness Trail', 'exploring the wilderness'),
+                ('dungeon', 'dungeon-entrance', 'Dungeon Entrance', 'entrance to a dungeon or lair')):
+            with self.subTest(starting_point=starting_point):
+                game = new_game(7, starting_point=starting_point)
+                location, = game['world']['locations']
+                self.assertEqual(game['currentLocationId'], location_id)
+                self.assertEqual(location['id'], location_id)
+                self.assertEqual(location['name'], name)
+                self.assertTrue(location['visited'])
+                self.assertIn(opening, game['history']['recentEvents'][0]['content'])
+                self.assertEqual(game['world']['items'], [])
+                location['aliases'].append('changed')
+                self.assertNotIn('changed', new_game(7, starting_point)['world']['locations'][0]['aliases'])
+                calls = fake_calls()
+                updated, _ = process_turn(new_game(7, starting_point), 'Look around.', calls)
+                self.assertEqual(updated['currentLocationId'], location_id)
+
+    def test_new_game_rejects_invalid_starting_points(self):
+        for starting_point in ('unknown', None, [], {}):
+            with self.subTest(starting_point=starting_point):
+                with self.assertRaises(ValueError):
+                    new_game(7, starting_point)
+
     def test_confirmed_alias_is_learned_and_reused_without_comparator(self):
         for collection in ('items', 'locations', 'npcs'):
             with self.subTest(collection=collection):

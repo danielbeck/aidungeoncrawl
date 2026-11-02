@@ -10,13 +10,13 @@ from flask import Blueprint, Response, current_app, jsonify, request, session
 try:
     from backend.direct_mode import process_direct_turn
     from backend.freeform_mode import process_freeform_turn
-    from backend.game_engine import InvalidTurnResponse, new_game, process_turn
+    from backend.game_engine import STARTING_POINTS, InvalidTurnResponse, new_game, process_turn
     from backend.harness.llm_provider import LLMError
     from backend.llm_calls.gameplay import HistorySummarizerCall
 except ImportError:
     from direct_mode import process_direct_turn
     from freeform_mode import process_freeform_turn
-    from game_engine import InvalidTurnResponse, new_game, process_turn
+    from game_engine import STARTING_POINTS, InvalidTurnResponse, new_game, process_turn
     from harness.llm_provider import LLMError
     from llm_calls.gameplay import HistorySummarizerCall
 
@@ -140,7 +140,13 @@ def start_new_game():
     user_id = _user_id()
     if not user_id:
         return jsonify({'error': 'Authentication is required to play.'}), 401
-    game = new_game(user_id)
+    data = request.get_json(silent=True) if request.get_data() else {}
+    if not isinstance(data, dict):
+        return jsonify({'error': 'Expected a JSON object.'}), 400
+    starting_point = data.get('starting_point', 'town')
+    if not isinstance(starting_point, str) or starting_point not in STARTING_POINTS:
+        return jsonify({'error': f'starting_point must be one of: {", ".join(STARTING_POINTS)}.'}), 400
+    game = new_game(user_id, starting_point=starting_point)
     conn = _get_db()
     try:
         _ensure_schema(conn)
