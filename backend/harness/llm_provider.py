@@ -7,6 +7,7 @@ response for the caller to parse/validate.
 """
 import json
 import re
+import uuid
 import urllib.error
 import urllib.request
 
@@ -66,19 +67,85 @@ def _post_json(url, payload, headers=None, timeout=60):
         raise LLMError(f'Failed to reach {url}.', details=str(error.reason)) from error
 
 
-def call_ollama(messages, schema, config):
+def _tool_messages(messages, provider):
+    encoded = []
+    for message in messages:
+        message = {**message}
+        if 'tool_calls' in message:
+            calls = []
+            for call in message['tool_calls']:
+                function = {**call['function']}
+                if provider == 'openrouter':
+                    function['arguments'] = json.dumps(function['arguments'])
+                    calls.append({**call, 'function': function})
+                else:
+                    calls.append({'function': function})
+            message['tool_calls'] = calls
+        if message['role'] == 'tool' and provider == 'ollama':
+            message['tool_name'] = message.pop('name')
+            message.pop('tool_call_id', None)
+        encoded.append(message)
+    return encoded
+
+
+def _tool_response(message, provider, model):
+    if not isinstance(message, dict):
+        raise LLMError('The game master provider returned no assistant message.')
+    content = message.get('content')
+    calls = message.get('tool_calls')
+    content = '' if content is None else content
+    calls = [] if calls is None else calls
+    if not isinstance(content, str) or not isinstance(calls, list):
+        raise LLMError('The game master provider returned an invalid assistant message.')
+    normalized = []
+    for call in calls:
+        function = call.get('function') if isinstance(call, dict) else None
+        if not isinstance(function, dict) or not isinstance(function.get('name'), str):
+            raise LLMError('The game master provider returned an invalid tool call.')
+        arguments = function.get('arguments')
+        if isinstance(arguments, str):
+            try:
+                arguments = json.loads(arguments)
+            except json.JSONDecodeError as error:
+                raise LLMError('The game master returned invalid tool argument JSON.',
+                               details=str(error)) from error
+        if not isinstance(arguments, dict):
+            raise LLMError('The game master tool arguments must be a JSON object.')
+        call_id = call.get('id') or f'call_{uuid.uuid4().hex}'
+        if not isinstance(call_id, str):
+            raise LLMError('The game master returned an invalid tool call ID.')
+        normalized.append({
+            'id': call_id, 'type': 'function',
+            'function': {'name': function['name'], 'arguments': arguments},
+        })
+    if len({call['id'] for call in normalized}) != len(normalized):
+        raise LLMError('The game master returned duplicate tool call IDs.')
+    return {
+        'provider': provider, 'model': model, 'response': content,
+        'message': {'role': 'assistant', 'content': content, 'tool_calls': normalized},
+    }
+
+
+def call_ollama(messages, schema, config, tools=None):
     payload = {
         'model': config['ollama_model'],
-        'messages': messages,
+        'messages': _tool_messages(messages, 'ollama') if tools is not None else messages,
         'stream': False,
     }
     if config.get('temperature') is not None:
         payload['options'] = {'temperature': config['temperature']}
     if schema is not None:
         payload['format'] = schema
+    if tools is not None:
+        payload['tools'] = tools
+        payload.setdefault('options', {}).update({'num_ctx': 16384, 'num_predict': 2048})
 
     data = _post_json(f"{config['ollama_url']}/api/chat", payload)
     message = data.get('message')
+    if tools is not None:
+        if data.get('done_reason') == 'length':
+            raise LLMError('The game master response was truncated before it completed.')
+        return _tool_response(message, 'ollama', config['ollama_model'])
     content = message.get('content', '') if isinstance(message, dict) else ''
     return {
         'provider': 'ollama',
@@ -87,14 +154,14 @@ def call_ollama(messages, schema, config):
     }
 
 
-def call_openrouter(messages, schema, schema_name, config):
+def call_openrouter(messages, schema, schema_name, config, tools=None):
     api_key = config.get('openrouter_api_key')
     if not api_key:
         raise LLMError('OPENROUTER_API_KEY is not set.', code='MISSING_OPENROUTER_API_KEY')
 
     payload = {
         'model': config['openrouter_model'],
-        'messages': messages,
+        'messages': _tool_messages(messages, 'openrouter') if tools is not None else messages,
     }
     if config.get('temperature') is not None:
         payload['temperature'] = config['temperature']
@@ -109,6 +176,11 @@ def call_openrouter(messages, schema, schema_name, config):
         }
         # Only route to providers that honor response_format; some free models ignore it.
         payload['provider'] = {'require_parameters': True}
+    if tools is not None:
+        payload['tools'] = tools
+        payload['tool_choice'] = 'auto'
+        payload['parallel_tool_calls'] = False
+        payload['provider'] = {'require_parameters': True}
 
     data = _post_json(
         f"{config['openrouter_url']}/chat/completions",
@@ -121,6 +193,10 @@ def call_openrouter(messages, schema, schema_name, config):
     )
     choices = data.get('choices') or []
     message = choices[0].get('message') if choices else None
+    if tools is not None:
+        if choices and choices[0].get('finish_reason') == 'length':
+            raise LLMError('The game master response was truncated before it completed.')
+        return _tool_response(message, 'openrouter', config['openrouter_model'])
     content = message.get('content', '') if isinstance(message, dict) else ''
     return {
         'provider': 'openrouter',
@@ -129,16 +205,18 @@ def call_openrouter(messages, schema, schema_name, config):
     }
 
 
-def chat(messages, schema=None, schema_name=None, settings=None, config=None, temperature=None):
+def chat(messages, schema=None, schema_name=None, settings=None, config=None, temperature=None,
+         tools=None):
     """Send a list of chat `messages` ({role, content}) to the configured
     provider. `schema` is an optional JSON schema used as the structured
-    response_format. Returns {provider, model, response}."""
+    response_format. Returns {provider, model, response}. With native `tools`,
+    also returns a normalized assistant `message` containing tool_calls."""
     config = config or get_llm_config(settings or {})
     if temperature is not None:
         config = {**config, 'temperature': temperature}
     if config['provider'] == 'openrouter':
-        return call_openrouter(messages, schema, schema_name, config)
-    return call_ollama(messages, schema, config)
+        return call_openrouter(messages, schema, schema_name, config, tools=tools)
+    return call_ollama(messages, schema, config, tools=tools)
 
 
 def call_llm(prompt, schema, schema_name=None, settings=None, config=None):

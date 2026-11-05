@@ -4,7 +4,8 @@
 
 LLMs interpret natural language and narrate outcomes. Deterministic code owns
 IDs, identity reconciliation, persistent effects, and database writes. Models
-receive natural-language names and descriptions, not internal IDs. Changes are
+receive natural-language names and descriptions; identity resolution and tool
+calls also receive canonical IDs. Changes are
 built on a candidate state and committed only after required processing succeeds.
 
 State contains:
@@ -34,6 +35,74 @@ comparator, or summarizer is called. The response is appended to the transcript;
 tracked locations, items, NPCs, objects, exits, movement history, and game-over
 status are left untouched. The sidebar still shows the last tracked state and
 may be stale. Switching back does not reconstruct missed world changes.
+
+### Tool using mode
+
+`tool_using`, labeled **Tool using**, runs a game master conversation with native
+Ollama/OpenRouter function tools. The prompt and tool schemas live in
+`shared/llm/game_master.md` and `shared/llm/game_master.tools.json`.
+The engine supplies the full literal history as conversation messages, player
+action, current location, local available items (including those held by present
+NPCs), present active NPCs, carried inventory, and known location IDs. A current
+prepared historical summary is also supplied when available.
+
+The game master interprets intent and contextual plausibility, choosing zero or
+more tools before returning plain-text story. It must not narrate unperformed
+state changes. Tools run sequentially, including calls returned in one batch,
+and each result returns canonical entities plus the updated scene. Dependent
+calls must wait for newly created IDs:
+
+Each round offers only currently applicable tools; ID parameters enumerate
+eligible draft-state IDs. For example, pickup is not offered until a local item
+exists, and existing-location movement is not offered when no other location
+exists. These are state constraints, not natural-language intent filters.
+Tool selection uses temperature zero. After each batch an authoritative scene
+checkpoint reminds the model that rejected operations had no effects.
+Ollama tool requests reserve a 16,384-token context and up to 2,048 generated
+tokens per response; its smaller default context can truncate tool instructions.
+
+| Tool | Effect |
+|---|---|
+| `move_to_location` | Move the player to an existing location. |
+| `move_to_new_location` | Resolve/create a destination, then move the player. |
+| `create_item` | Resolve/create an item in an existing location, not inventory. |
+| `pick_up_item` | Put an accessible available item into inventory. |
+| `drop_item` | Put a carried item in the current location. |
+| `destroy_item` | Remove an accessible item, including complete consumption. |
+| `create_npc` | Resolve/create an NPC in an existing location. |
+| `destroy_npc` | Mark a present active NPC dead; leave its items at that location. |
+| `move_npc` | Move a present active NPC to an existing location. |
+
+Creation uses the shared candidate-list comparator before adding a record.
+Existing matches retain their canonical data and holder/location; they are
+neither teleported nor revived. Plausibility is the game master's responsibility,
+not a deterministic keyword filter. Tools validate schemas, IDs, accessibility,
+and blocked routes. Successful movement connects locations in both directions;
+player movement records `lastMovement` and visits the destination.
+
+Tools operate on a draft. Invalid arguments, ambiguous identity, and state
+constraint violations roll back just that tool and return explicit errors to
+the game master for correction or clarification. Provider failures, empty or
+JSON-only final text, reused call IDs, or exceeding 12 LLM rounds / 32 tool calls reject the
+entire turn. Nothing is persisted until normal game/revision checks and atomic
+commit succeed. NPC death preserves references; player death/termination is
+not yet supported by this tool set.
+
+After final story text, the engine appends the completed exchange and commits
+the turn without waiting for summarization. Once the frontend displays the saved
+story, it triggers a separate `/game/prepare` request, as for Managed mode.
+Preparation errors appear in debug progress without discarding the saved turn;
+revision checks prevent late summaries from overwriting newer turns. Full
+history remains available if the next action begins before preparation finishes.
+
+Debug progress records each game-master request, each tool invocation, and any
+nested comparator call in execution order, with operation IDs linking updates
+and parent IDs linking nested calls. Server logs include requests, responses,
+tool results, and failures. Existing modes remain independent.
+Native-tool support alone does not guarantee reliable tool planning. Local live
+checks verified compound movement/creation/pickup with `gemma4:latest`;
+`llama3.2:latest` handled a simple pickup but was unreliable on compound actions.
+The implementation does not silently switch the configured provider or model.
 
 System prompts, user-message templates, and optional response schemas live in
 `shared/llm/`, named after each call. A call's `<name>.input.md` template uses

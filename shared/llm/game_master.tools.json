@@ -1,0 +1,74 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "move_to_location",
+      "description": "Move the player from the current location to an existing location. Rejects blocked routes; records connected exits and actual movement.",
+      "parameters": {"type": "object", "properties": {"destination_id": {"type": "string"}}, "required": ["destination_id"], "additionalProperties": false}
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "move_to_new_location",
+      "description": "Establish a contextually plausible destination, resolving existing location identity before creating. Move the player there and return its canonical ID.",
+      "parameters": {"type": "object", "properties": {"name": {"type": "string"}, "description": {"type": "string"}}, "required": ["name", "description"], "additionalProperties": false}
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "create_item",
+      "description": "Establish a plausible item in an existing location (not inventory). Resolve against tracked available items first; an existing match keeps its holder/location. Return canonical ID.",
+      "parameters": {"type": "object", "properties": {"name": {"type": "string"}, "description": {"type": "string"}, "location_id": {"type": "string"}}, "required": ["name", "description", "location_id"], "additionalProperties": false}
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "pick_up_item",
+      "description": "Pick up an EXISTING accessible item using its item_id from the scene or a successful create_item result. If the item does not exist, call create_item FIRST and wait for its ID. Never pass a name or description to this tool. May take an item held by a present active NPC.",
+      "parameters": {"type": "object", "properties": {"item_id": {"type": "string"}}, "required": ["item_id"], "additionalProperties": false}
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "drop_item",
+      "description": "Place a carried item in the player's current location.",
+      "parameters": {"type": "object", "properties": {"item_id": {"type": "string"}}, "required": ["item_id"], "additionalProperties": false}
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "destroy_item",
+      "description": "Destroy or completely consume an available item accessible in the current scene or player inventory. Removes its record.",
+      "parameters": {"type": "object", "properties": {"item_id": {"type": "string"}}, "required": ["item_id"], "additionalProperties": false}
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "create_npc",
+      "description": "Establish a plausible NPC in an existing location. Resolve against tracked NPCs first; an existing match is not moved or revived. Return canonical ID.",
+      "parameters": {"type": "object", "properties": {"name": {"type": "string"}, "description": {"type": "string"}, "location_id": {"type": "string"}}, "required": ["name", "description", "location_id"], "additionalProperties": false}
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "destroy_npc",
+      "description": "Mark a present active NPC dead, keeping its canonical record. Items it held are left in its location.",
+      "parameters": {"type": "object", "properties": {"npc_id": {"type": "string"}}, "required": ["npc_id"], "additionalProperties": false}
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "move_npc",
+      "description": "Move a present active NPC to an existing location without moving the player. Rejects blocked routes; held items remain with the NPC.",
+      "parameters": {"type": "object", "properties": {"npc_id": {"type": "string"}, "destination_id": {"type": "string"}}, "required": ["npc_id", "destination_id"], "additionalProperties": false}
+    }
+  }
+]

@@ -14,6 +14,7 @@ It runs as a local Flask server or as CGI on shared hosting.
 | `account_schema.py`, `init_db.py` | Additive account migrations and initial database setup. |
 | `reset_email.py` | TLS-protected password-reset email. |
 | `game_engine.py` | State, entity identity, and turn orchestration. |
+| `tool_mode.py` | Native game-master conversation and transactional world tools. |
 | `endpoints/` | Account, gameplay, and LLM APIs. |
 | `harness/` | Provider adapters and reusable LLM call mechanics. |
 | `llm_calls/`, `../shared/llm/` | Game-specific LLM tasks and prompt/schema definitions. |
@@ -77,6 +78,7 @@ All gameplay endpoints require an authenticated session.
 | `GET /game/` | Load or initialize the user's saved adventure. |
 | `POST /game/new` | Replace it with a fresh adventure; optional JSON `starting_point`: `town` (default), `wilderness`, or `dungeon`. |
 | `POST /game/turn` | Process `action`, `game_id`, and UUID `request_id`. |
+| `POST /game/mode` | Persist `mode` for `game_id`: `managed`, `direct`, `freeform`, or `tool_using`. |
 | `POST /game/prepare` | Prepare summarized history for `game_id`. |
 | `POST /game/stop` | End the adventure. |
 
@@ -91,11 +93,16 @@ curl -b cookies.txt -c cookies.txt -X POST http://localhost:8000/game/turn \
   -d '{"action":"Enter the tavern","game_id":"<game-id>","request_id":"<uuid>"}'
 ```
 
-Managers report inventory/NPC interactions and movement intent. Code reconciles
+In Managed mode, managers report inventory/NPC interactions and movement intent. Code reconciles
 these before the narrator returns only `narration`, `action_succeeded`, and
 `game_over`. There is no narrator state-operation payload or correction loop.
 Supported persistent changes and component contracts are documented once in
 [Implementation](../docs/IMPLEMENTATION.md).
+
+`POST /game/turn` also accepts `mode` (default `managed`). Tool using mode requires
+a model supporting native function tools. Its game master updates the draft world
+through nine map/item/NPC tools, receives actual results, and returns story text.
+Unsupported providers/models fail explicitly without saving draft changes.
 
 Saving is atomic and version-checked. Reusing a completed `request_id` returns
 the saved result. Invalid model responses do not partially change state.
@@ -103,8 +110,9 @@ Turn errors include the LLM or validation failure reason in both JSON and stream
 responses, so the gameplay error and debug progress explain why the turn failed.
 Rejected manager output appears in the failed manager's debug Response section.
 Provider transport-error details and tracebacks are not included.
-Summary preparation is a separate post-turn request; it does not delay returning
-the saved narration.
+Managed and Tool using summary preparation runs in a separate post-turn request
+triggered by the frontend after displaying saved narration. Summary failures are
+logged without discarding the completed turn; late results are revision-checked.
 
 ### Streaming
 
@@ -132,6 +140,11 @@ game-context previews are limited to 4,000 characters.
 Logs contain player input, context, and model output: treat them as private.
 Provider settings and authentication headers are not logged.
 
+Tool using mode logs complete game-master messages and ordered tool starts,
+results, and errors to the same diagnostic log, including nested comparator
+requests. Its progress events carry `operation_id` and, for nested calls,
+`parent_operation_id`, so repeated tools retain independent ordered entries.
+
 ## Testing
 
 Run focused suites from the repository root as needed:
@@ -139,6 +152,7 @@ Run focused suites from the repository root as needed:
 ```bash
 python3 -m unittest backend.test_account_backport backend.test_password_reset
 python3 -m unittest backend.test_game_engine backend.test_game_api backend.test_history_preparation
+python3 -m unittest backend.test_tool_mode backend.test_tool_provider
 ```
 
 Live movement checks are opt-in and call local Ollama:

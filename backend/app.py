@@ -77,7 +77,8 @@ llm_handler.setFormatter(logging.Formatter(
 ))
 for logger_name in (
         'backend.harness.llm_calls', 'harness.llm_calls',
-        'backend.llm_calls', 'llm_calls', 'backend.game_engine', 'game_engine'):
+        'backend.llm_calls', 'llm_calls', 'backend.game_engine', 'game_engine',
+        'backend.tool_mode', 'tool_mode'):
     diagnostic_logger = logging.getLogger(logger_name)
     diagnostic_logger.setLevel(logging.INFO)
     diagnostic_logger.addHandler(default_handler)

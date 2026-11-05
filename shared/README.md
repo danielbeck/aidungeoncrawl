@@ -10,6 +10,9 @@ Definitions for each LLM call are named after the call's `name`:
 - `<name>.input.md`: user-message template (optional; use `{{input}}` once for
   the call's input)
 - `<name>.json`: response schema (optional; without it the call returns plain text)
+- `game_master.tools.json`: native world-tool definitions for Tool using mode.
+  Its `game_master.md` prompt is used by the dedicated conversation loop rather
+  than the single-call `/llm/calls/<name>` endpoint.
 
 The backend (`backend/llm_calls` and `backend/harness`) reads these at runtime
 and serves each call at `POST /llm/calls/<name>`. A frontend feature that needs

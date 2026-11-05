@@ -2,6 +2,23 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { finishProgress, isProgressPending, updateProgress } from './progress.js'
 
+test('tool operations retain execution order around nested comparator calls', () => {
+  let events = []
+  for (const event of [
+    { component: 'game_master', operation_id: 'gm1', status: 'started' },
+    { component: 'game_master', operation_id: 'gm1', status: 'completed' },
+    { component: 'tool', operation_id: 'tool1', status: 'started', tool_name: 'create_item' },
+    { component: 'comparator', operation_id: 'compare1', status: 'started', parent_operation_id: 'tool1' },
+    { component: 'comparator', operation_id: 'compare1', status: 'completed' },
+    { component: 'tool', operation_id: 'tool1', status: 'completed' },
+    { component: 'tool', operation_id: 'tool2', status: 'started', tool_name: 'pick_up_item' },
+    { component: 'tool', operation_id: 'tool2', status: 'completed' },
+    { component: 'game_master', operation_id: 'gm2', status: 'started' },
+  ]) events = updateProgress(events, event)
+  assert.deepEqual(events.map(event => event.operation_id), ['gm1', 'tool1', 'compare1', 'tool2', 'gm2'])
+  assert.deepEqual(events.map(event => event.status), ['completed', 'completed', 'completed', 'completed', 'started'])
+})
+
 test('one operation updates in place and preserves request and provider details', () => {
   let events = []
   for (const event of [

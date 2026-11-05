@@ -148,7 +148,7 @@ class GameApiTests(unittest.TestCase):
 
     def test_mode_selection_persists_without_a_turn(self):
         game = self.client.get('/game/').get_json()['game']
-        for mode in ('freeform', 'direct', 'managed'):
+        for mode in ('freeform', 'tool_using', 'direct', 'managed'):
             response = self.client.post('/game/mode', json={
                 'game_id': game['id'], 'mode': mode,
             })
@@ -164,6 +164,124 @@ class GameApiTests(unittest.TestCase):
             'game_id': game['id'], 'mode': 'unknown',
         }).status_code, 400)
         self.assertEqual(self.client.get('/game/').get_json()['game']['mode'], 'managed')
+
+    def test_tool_using_turn_returns_before_history_preparation(self):
+        from backend.tool_mode import GameMasterCall, process_tool_turn
+        from types import SimpleNamespace
+
+        game = self.client.get('/game/').get_json()['game']
+        for streaming in (False, True):
+            with self.subTest(streaming=streaming):
+                original = self.client.get('/game/').get_json()['game']
+                transport = Mock(return_value={
+                    'provider': 'fake', 'model': 'fake',
+                    'message': {'role': 'assistant', 'content': 'The story continues.', 'tool_calls': []},
+                })
+                def resolve(state, action, **options):
+                    return process_tool_turn(
+                        state, action, call=GameMasterCall(transport=transport),
+                        **options)
+
+                with patch('backend.endpoints.game.process_tool_turn', side_effect=resolve), \
+                        patch('backend.endpoints.game.process_turn') as managed:
+                    response = self.client.post('/game/turn', json={
+                        'action': 'Wait.', 'game_id': game['id'], 'mode': 'tool_using',
+                        'request_id': ('efb74c49-3e11-4bf1-b72f-447e4b632c08' if not streaming
+                                       else '7b71fd0e-a2d9-46b0-859d-c67be5a3c74f'),
+                    }, headers={'Accept': 'application/x-ndjson'} if streaming else {})
+                    self.assertEqual(response.status_code, 200)
+                    if streaming:
+                        events = [json.loads(line) for line in response.data.splitlines()]
+                        self.assertEqual(events[-1]['type'], 'complete')
+                        self.assertTrue(any(event.get('component') == 'game_master'
+                                            for event in events))
+                    managed.assert_not_called()
+                transport.assert_called_once()
+                self.assertEqual({tool['function']['name'] for tool in transport.call_args[0][1]},
+                                 {'move_to_new_location', 'create_item', 'create_npc'})
+                saved = self.client.get('/game/').get_json()['game']
+                self.assertEqual(saved['mode'], 'tool_using')
+                self.assertEqual(saved['world'], original['world'])
+                self.assertEqual(saved['currentLocationId'], original['currentLocationId'])
+                self.assertEqual(saved['history']['recentEvents'][:-2],
+                                 original['history']['recentEvents'])
+                self.assertEqual(saved['history']['recentEvents'][-1]['content'],
+                                 'The story continues.')
+                self.assertNotEqual(saved['history'].get('summaryEventCount'),
+                                    len(saved['history']['recentEvents']))
+                with patch('backend.endpoints.game.HistorySummarizerCall.run',
+                           return_value=SimpleNamespace(
+                               data={'summary': 'The player waited.'}, provider='fake',
+                               model='fake')) as summarize:
+                    prepared = self.client.post('/game/prepare', json={
+                        'game_id': game['id'],
+                    }).get_json()
+                summarize.assert_called_once()
+                self.assertTrue(prepared['prepared'])
+                self.assertEqual(prepared['summaryEventCount'], len(saved['history']['recentEvents']))
+
+    def test_tool_using_world_changes_are_saved_once(self):
+        from backend.tool_mode import GameMasterCall, process_tool_turn
+        from backend.test_tool_mode import reply, tool
+
+        game = self.client.get('/game/').get_json()['game']
+        rounds = []
+
+        def respond(messages, tools):
+            copy_of_messages = json.loads(json.dumps(messages))
+            rounds.append(copy_of_messages)
+            if len(rounds) == 1:
+                return reply(calls=[tool('create_item', name='Key', description='Iron.',
+                                         location_id=game['currentLocationId'])])
+            if len(rounds) == 2:
+                outcome = json.loads(next(message for message in reversed(copy_of_messages)
+                                          if message['role'] == 'tool')['content'])
+                return reply(calls=[tool('pick_up_item', item_id=outcome['entity']['id'])])
+            return reply('You pick up the key.')
+
+        master = GameMasterCall(transport=respond)
+
+        def resolve(state, action, **options):
+            return process_tool_turn(state, action, call=master, **options)
+
+        body = {
+            'action': 'Take a key.', 'game_id': game['id'], 'mode': 'tool_using',
+            'request_id': 'efb74c49-3e11-4bf1-b72f-447e4b632c08',
+        }
+        with patch('backend.endpoints.game.process_tool_turn', side_effect=resolve):
+            response = self.client.post('/game/turn', json=body).get_json()
+            repeated = self.client.post('/game/turn', json=body).get_json()
+        self.assertEqual(response, repeated)
+        self.assertEqual(len(rounds), 3)
+        saved = self.client.get('/game/').get_json()['game']
+        self.assertEqual(saved['world']['items'][0]['holder'],
+                         {'type': 'player', 'id': saved['playerId']})
+        self.assertNotIn('summaryEventCount', saved['history'])
+
+    def test_tool_using_provider_failure_does_not_save_draft(self):
+        from backend.tool_mode import GameMasterCall, process_tool_turn
+        from backend.test_tool_mode import reply, tool
+
+        game = self.client.get('/game/').get_json()['game']
+        transport = Mock(side_effect=[
+            reply(calls=[tool('create_item', name='Key', description='Iron.',
+                              location_id=game['currentLocationId'])]),
+            LLMError('Provider unavailable.'),
+        ])
+        master = GameMasterCall(transport=transport)
+
+        def resolve(state, action, **options):
+            return process_tool_turn(state, action, call=master, **options)
+
+        with patch('backend.endpoints.game.process_tool_turn', side_effect=resolve):
+            response = self.client.post('/game/turn', json={
+                'action': 'Take a key.', 'game_id': game['id'], 'mode': 'tool_using',
+                'request_id': 'efb74c49-3e11-4bf1-b72f-447e4b632c08',
+            }, headers={'Accept': 'application/x-ndjson'})
+            event = json.loads(response.data.splitlines()[-1])
+        self.assertEqual(event['type'], 'error')
+        self.assertEqual(event['status'], 502)
+        self.assertEqual(self.client.get('/game/').get_json()['game'], game)
 
     def test_stream_reports_progress_before_commit_and_replays_completed_request(self):
         game = self.client.get('/game/').get_json()['game']

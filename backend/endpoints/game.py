@@ -10,19 +10,21 @@ from flask import Blueprint, Response, current_app, jsonify, request, session
 try:
     from backend.direct_mode import process_direct_turn
     from backend.freeform_mode import process_freeform_turn
+    from backend.tool_mode import process_tool_turn
     from backend.game_engine import STARTING_POINTS, InvalidTurnResponse, new_game, process_turn
     from backend.harness.llm_provider import LLMError
     from backend.llm_calls.gameplay import HistorySummarizerCall
 except ImportError:
     from direct_mode import process_direct_turn
     from freeform_mode import process_freeform_turn
+    from tool_mode import process_tool_turn
     from game_engine import STARTING_POINTS, InvalidTurnResponse, new_game, process_turn
     from harness.llm_provider import LLMError
     from llm_calls.gameplay import HistorySummarizerCall
 
 
 bp = Blueprint('game', __name__, url_prefix='/game')
-MODES = ('managed', 'direct', 'freeform')
+MODES = ('managed', 'direct', 'freeform', 'tool_using')
 
 
 def _stream_event(event):
@@ -332,6 +334,7 @@ def _complete_turn(user_id, game_id, request_id, action, original_state,
             'managed': process_turn,
             'direct': process_direct_turn,
             'freeform': process_freeform_turn,
+            'tool_using': process_tool_turn,
         }[mode]
         updated_state, result = processor(original_state, action, **options)
         updated_state['mode'] = mode

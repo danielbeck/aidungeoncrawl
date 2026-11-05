@@ -15,12 +15,15 @@ const progressComponentLabels = {
   summarizer: 'History summarizer',
   direct_narrator: 'Direct narrator',
   freeform_narrator: 'Freeform narrator',
+  game_master: 'Game master',
+  tool: 'World tool',
 }
 
 const modeOptions = [
   { value: 'managed', label: 'Managed', title: 'Managers interpret the action, code applies changes, then the narrator describes them.' },
   { value: 'direct', label: 'Direct', title: 'One narrator call describes the outcome and returns the whole updated world.' },
   { value: 'freeform', label: 'Freeform', title: 'Continue the story without updating tracked world state. Existing world data will go stale.' },
+  { value: 'tool_using', label: 'Tool using', title: 'The game master uses tools to update locations, items, and NPCs, then narrates the outcome.' },
 ]
 
 function GamePage() {
@@ -143,8 +146,7 @@ function GamePage() {
           movement_outcome: data.turn.movement_outcome,
         },
       })))
-      // Only managed turns need a prepared summary.
-      if (mode === 'managed') void prepareHistory(data.game.id, revision)
+      if (mode === 'managed' || mode === 'tool_using') void prepareHistory(data.game.id, revision)
     } catch (err) {
       setError(err.message)
       setProgress(events => finishProgress(events, err.message))
@@ -247,7 +249,7 @@ function GamePage() {
                 Turn progress
                 <span className={styles.progressSummaryStatuses}>
                   {progress.map((event, index) => {
-                    const label = progressComponentLabels[event.component] || event.component
+                    const label = event.tool_name || progressComponentLabels[event.component] || event.component
                     const failed = event.status === 'failed' || event.status === 'interrupted'
                     return <span
                       key={`${event.component}-${index}`}
@@ -269,7 +271,7 @@ function GamePage() {
                 {progress.map((event, index) => (
                   <li key={index} aria-busy={isProgressPending(event)}>
                     {isProgressPending(event) && <span className={styles.spinner} aria-hidden="true" />}
-                    <strong>{progressComponentLabels[event.component] || event.component}</strong>
+                    <strong>{event.tool_name || progressComponentLabels[event.component] || event.component}</strong>
                     {' — '}{event.status}{event.attempt ? ` (attempt ${event.attempt})` : ''}
                     {event.provider && <small>{' '}{event.provider}/{event.model}</small>}
                     {event.reason && <p>{event.reason}</p>}

@@ -5,7 +5,9 @@ export function isProgressPending(event) {
 }
 
 export function updateProgress(events, event) {
-  const index = events.findLastIndex(entry => entry.component === event.component)
+  const index = events.findLastIndex(entry => event.operation_id
+    ? entry.operation_id === event.operation_id
+    : !entry.operation_id && entry.component === event.component)
   const previous = events[index]
   const startsNewOperation = event.status === 'started'
     && previous && !isProgressPending(previous)
