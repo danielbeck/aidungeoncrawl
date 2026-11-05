@@ -75,10 +75,11 @@ class LiveMovementTests(unittest.TestCase):
             with self.subTest(candidate=candidate[0], proposed=proposed[0]):
                 result = self.calls['comparator'].run(json.dumps({
                     'entity_type': entity_type,
-                    'candidate_entity': dict(zip(('name', 'description'), candidate)),
+                    'candidates': [{'id': 'candidate', **dict(zip(('name', 'description'), candidate))}],
                     'proposed_entity': dict(zip(('name', 'description'), proposed)),
                 }))
-                self.assertEqual(result.data, {'same_entity': expected})
+                self.assertEqual(result.data, {'outcome': 'existing', 'entity_id': 'candidate'}
+                                 if expected else {'outcome': 'new'})
 
     def test_named_paraphrases_and_non_movement(self):
         for action, kind, text in (

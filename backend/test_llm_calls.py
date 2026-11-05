@@ -437,7 +437,7 @@ class RunCallEndpointTests(unittest.TestCase):
         self.chat_patch = patch('backend.harness.llm_calls.chat')
         self.chat = self.chat_patch.start()
         self.addCleanup(self.chat_patch.stop)
-        result = {'same_entity': True}
+        result = {'outcome': 'existing', 'entity_id': 'crypt', 'candidate_ids': []}
         self.chat.return_value = {'provider': 'ollama', 'model': 'm', 'response': json.dumps(result)}
 
     def post(self, body, name='comparator'):
@@ -448,7 +448,7 @@ class RunCallEndpointTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {
-            'data': {'same_entity': True},
+            'data': {'outcome': 'existing', 'entity_id': 'crypt'},
             'provider': 'ollama', 'model': 'm',
         })
         messages, schema, schema_name = self.chat.call_args[0]

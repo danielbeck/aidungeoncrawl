@@ -149,12 +149,34 @@ class ComparatorCall(LLMCall):
     name = 'comparator'
     temperature = 0
 
-    def validate_response(self, data):
-        if (not isinstance(data, dict)
-                or set(data) != {'same_entity'}
-                or not isinstance(data['same_entity'], bool)):
+    @staticmethod
+    def validate_response(data):
+        if isinstance(data, dict) and set(data) == {'outcome', 'entity_id', 'candidate_ids'}:
+            if data['outcome'] == 'existing' and data['candidate_ids'] == []:
+                data = {'outcome': 'existing', 'entity_id': data['entity_id']}
+            elif data['outcome'] == 'new' and data['entity_id'] is None and data['candidate_ids'] == []:
+                data = {'outcome': 'new'}
+            elif data['outcome'] == 'ambiguous' and data['entity_id'] is None:
+                data = {'outcome': 'ambiguous', 'candidate_ids': data['candidate_ids']}
+        valid = False
+        if isinstance(data, dict):
+            outcome = data.get('outcome')
+            if outcome == 'new':
+                valid = set(data) == {'outcome'}
+            elif outcome == 'existing':
+                valid = (set(data) == {'outcome', 'entity_id'}
+                         and isinstance(data['entity_id'], str)
+                         and bool(data['entity_id'].strip()))
+            elif outcome == 'ambiguous':
+                ids = data.get('candidate_ids')
+                valid = (set(data) == {'outcome', 'candidate_ids'}
+                         and isinstance(ids, list) and len(ids) >= 2
+                         and all(isinstance(value, str) and value.strip() for value in ids)
+                         and len(set(ids)) == len(ids))
+        if not valid:
             raise LLMResponseError(
-                'comparator: response must contain boolean same_entity only.',
+                'comparator: response must be existing with entity_id, new, '
+                'or ambiguous with at least two distinct candidate_ids.',
                 details=data)
         return data
 

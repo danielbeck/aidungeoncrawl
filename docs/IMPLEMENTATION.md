@@ -155,9 +155,24 @@ effects. `game_over` ends the game for character death.
 
 ### Comparator and identity
 
-Receives `entity_type`, one `candidate_entity`, and `proposed_entity`, using
-natural-language names/descriptions. Returns only `{"same_entity":true}` or
-`{"same_entity":false}`. It does not choose state or perform actions.
+Receives `entity_type`, the complete eligible `candidates` list, `proposed_entity`,
+and context (current location, player ID, and up to six recent exchanges).
+Candidates include IDs, names/descriptions, and available aliases and holder/location
+information. Returns one of:
+- `{"outcome":"existing","entity_id":"<candidate ID>"}`
+- `{"outcome":"new"}`
+- `{"outcome":"ambiguous","candidate_ids":["<ID>","<ID>"]}`
+
+Code validates the response shape and verifies every returned ID belongs to the
+eligible list. Ambiguity requires at least two distinct IDs. `new` means no
+candidate matches, not approval to create. The comparator does not perform actions.
+Untracked current-turn proposals and synthetic command targets receive temporary
+candidate IDs for this call only; these IDs are not persisted.
+The provider schema requires all three fields (`outcome`, `entity_id`,
+`candidate_ids`) without conditional schema branches. Unused fields must be
+`null` and `[]`; validation normalizes valid responses to the compact forms
+above. Missing existing IDs, conflicting fields, and invalid ambiguity lists
+still fail rather than defaulting to a match or creation.
 Identity comparisons use temperature zero. The prompt distinguishes aliases and
 compatible shorter names from adjacent places, conflicting materials, and
 owner/possession relationships; shared words or entity type alone are not matches.
@@ -168,8 +183,8 @@ Before calling it, code normalizes case, punctuation, spacing, and Unicode:
 - Multiple identical name/description matches are ambiguous.
 - Names or aliases shared by eligible candidates require semantic comparison,
   not an arbitrary selection. Candidate aliases are included in comparator input.
-- Otherwise eligible candidates are compared individually. One positive match
-  retains its canonical record and ID; multiple positives reject the turn.
+- Otherwise all eligible candidates are resolved in one LLM call. An existing
+  match retains its canonical record and ID; ambiguity rejects the turn.
 - No matches allow creation only for supported interactions. Empty candidate
   lists skip the call.
 
@@ -178,10 +193,10 @@ An unambiguous comparator match records a different proposed name as an alias
 on the canonical entity, without renaming it or duplicating normalized aliases.
 Synthetic command targets are not canonical entities and do not learn aliases.
 Aliases are saved atomically with the turn; failed turns do not persist them.
-Ambiguity produces a separate failed comparator debug entry: Request details
-identifies the proposed entity and entity type, and Response lists every
-conflicting match under `matched_entities`. Individual comparison results remain
-in their own entries.
+Ambiguity marks the candidate-list comparator operation failed: Request details
+identify the proposed entity and eligible candidates, and Response lists every
+conflicting match under `matched_entities`. Deterministic ambiguity is logged
+without an LLM call.
 
 ## Supported state transitions
 
@@ -223,7 +238,7 @@ sequenceDiagram
     Movement Resolver-->>Conventional Code: Destination or clarification
 
     Conventional Code->>Comparator: Proposed entities and existing candidates, as needed
-    Comparator-->>Conventional Code: Same entity or different entity
+    Comparator-->>Conventional Code: Existing candidate ID, new, or ambiguous IDs
     Conventional Code->>Conventional Code: Reconcile and apply supported changes
 
     Conventional Code->>Narrator: Player action, summary, before/after state, and resolved outcomes
@@ -262,7 +277,8 @@ A summary is current when its covered count equals literal history length.
 Legacy summaries without a count are regenerated. Before the first action,
 the summary is empty and starting state supplies context. Inventory, NPC, and
 Narrator receive the overview as historical background; Comparator receives
-no history. The pending action is never part of its own historical summary.
+up to six recent exchanges as identity context. The pending action is never
+part of its own historical summary.
 
 Preparation failures appear in debug progress without rolling back the turn.
 The next action regenerates missing context before interpretation, potentially
@@ -286,7 +302,7 @@ and inventory reconciliation. Contextual calls show request/response and provide
 details; no-travel, named, and return paths show deterministic inputs/results
 and a skipped-call reason without implying an LLM was invoked.
 
-Comparator progress exposes individual LLM candidate/proposal comparisons and
+Comparator progress exposes one LLM candidate-list resolution per proposal and
 results, while deterministic matches, deterministic ambiguities, and
 empty-candidate skips remain logged but hidden from the UI. The Narrator shows
 waiting before reconciliation and skipped with a reason if it cannot proceed.

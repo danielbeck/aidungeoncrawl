@@ -39,12 +39,27 @@ class MatchingComparator(FakeCall):
         self.inputs.append(user_input)
         context = json.loads(user_input)
         proposed = context['proposed_entity']
-        entity = context['candidate_entity']
-        self.data = {'same_entity': (
+        matches = [entity['id'] for entity in context['candidates'] if (
             entity['name'].casefold() == proposed['name'].casefold()
             or entity['description'].casefold() == proposed['description'].casefold()
-        )}
+        )]
+        self.data = ({'outcome': 'existing', 'entity_id': matches[0]} if len(matches) == 1
+                     else {'outcome': 'ambiguous', 'candidate_ids': matches} if matches
+                     else {'outcome': 'new'})
         return SimpleNamespace(data=self.data, provider='test', model='test-model')
+
+
+class SelectingComparator(FakeCall):
+    def __init__(self, ambiguous=False):
+        super().__init__({})
+        self.ambiguous = ambiguous
+
+    def run(self, user_input):
+        candidates = json.loads(user_input)['candidates']
+        self.data = ({'outcome': 'ambiguous', 'candidate_ids': [item['id'] for item in candidates]}
+                     if self.ambiguous else
+                     {'outcome': 'existing', 'entity_id': candidates[0]['id']})
+        return super().run(user_input)
 
 
 def fake_calls(notable=None, narration='You look around.', game_over=False):
@@ -112,7 +127,7 @@ class GameEngineTests(unittest.TestCase):
                 game = new_game(7)
                 entity = {'id': 'canonical', 'name': 'Original name', 'description': 'A thing.'}
                 game['world'][collection] = [entity]
-                comparator = FakeCall({'same_entity': True})
+                comparator = SelectingComparator()
                 proposal = {'name': 'Alternate name', 'description': 'The same thing.'}
                 matched = _resolve_entity(
                     game, collection, proposal, comparator, game['currentLocationId'])
@@ -139,17 +154,18 @@ class GameEngineTests(unittest.TestCase):
             def run(self, user_input):
                 self.inputs.append(user_input)
                 return SimpleNamespace(
-                    data={'same_entity': json.loads(user_input)['candidate_entity']['name']
-                          == 'Iron key'}, provider='test', model='test')
+                    data={'outcome': 'existing', 'entity_id': 'first'},
+                    provider='test', model='test')
 
         comparator = SelectIron({})
         result = _resolve_entity(
             game, 'items', {'name': 'old key', 'description': 'Iron.'},
             comparator, game['currentLocationId'])
         self.assertIs(result, first)
-        self.assertEqual(len(comparator.inputs), 2)
+        self.assertEqual(len(comparator.inputs), 1)
         for request in comparator.inputs:
-            self.assertEqual(json.loads(request)['candidate_entity']['aliases'], ['old key'])
+            self.assertEqual([entity['aliases'] for entity in json.loads(request)['candidates']],
+                             [['old key'], ['old key']])
 
     def test_ambiguous_matches_do_not_learn_aliases(self):
         game = new_game(7)
@@ -161,8 +177,70 @@ class GameEngineTests(unittest.TestCase):
         with self.assertRaises(InvalidTurnResponse):
             _resolve_entity(
                 game, 'items', {'name': 'old key', 'description': 'An old key.'},
-                FakeCall({'same_entity': True}), game['currentLocationId'])
+                SelectingComparator(ambiguous=True), game['currentLocationId'])
         self.assertEqual(game, original)
+
+    def test_resolution_rejects_invented_and_ineligible_ids(self):
+        for resolution in (
+                {'outcome': 'existing', 'entity_id': 'missing'},
+                {'outcome': 'existing', 'entity_id': 'ineligible'},
+                {'outcome': 'ambiguous', 'candidate_ids': ['eligible', 'ineligible']}):
+            game = new_game(7)
+            eligible = {'id': 'eligible', 'name': 'Iron key', 'description': 'Iron.'}
+            game['world']['items'] = [
+                eligible, {'id': 'ineligible', 'name': 'Brass key', 'description': 'Brass.'},
+            ]
+            original = copy.deepcopy(game)
+            events = []
+            with self.subTest(resolution=resolution), self.assertRaisesRegex(
+                    InvalidTurnResponse, 'outside the eligible candidates'):
+                _resolve_entity(
+                    game, 'items', {'name': 'old key', 'description': 'An old key.'},
+                    FakeCall(resolution), game['currentLocationId'], candidates=[eligible],
+                    on_progress=lambda component, status, **details:
+                        events.append({'status': status, **details}))
+            self.assertEqual(game, original)
+            self.assertEqual(events[-1]['status'], 'failed')
+
+    def test_new_resolution_obeys_creation_policy(self):
+        for create in (False, True):
+            game = new_game(7)
+            game['world']['items'] = [{'id': 'coin', 'name': 'Coin', 'description': 'Gold.'}]
+            original = copy.deepcopy(game)
+            comparator = FakeCall({'outcome': 'new'})
+            result = _resolve_entity(
+                game, 'items', {'name': 'Key', 'description': 'Iron.'}, comparator,
+                game['currentLocationId'], create_if_missing=create)
+            self.assertEqual(len(comparator.inputs), 1)
+            if create:
+                self.assertEqual(result['name'], 'Key')
+                self.assertEqual(len(game['world']['items']), 2)
+            else:
+                self.assertIsNone(result)
+                self.assertEqual(game, original)
+
+    def test_candidate_list_includes_identity_context_without_mutating_proposals(self):
+        game = new_game(7)
+        game['history']['recentEvents'] = [
+            {'kind': 'narration', 'content': str(index)} for index in range(8)]
+        canonical = {
+            'id': 'key', 'name': 'Iron key', 'description': 'Iron.', 'aliases': ['rusty key'],
+            'holder': {'type': 'player', 'id': game['playerId']},
+        }
+        proposal_candidate = {'name': 'Brass key', 'description': 'Brass.'}
+        game['world']['items'] = [canonical]
+        original = copy.deepcopy(proposal_candidate)
+        comparator = FakeCall({'outcome': 'existing', 'entity_id': 'key'})
+        result = _resolve_entity(
+            game, 'items', {'name': 'old key', 'description': 'An old iron key.'},
+            comparator, game['currentLocationId'], candidates=[canonical, proposal_candidate])
+        self.assertIs(result, canonical)
+        request = json.loads(comparator.inputs[0])
+        self.assertEqual(len(request['candidates']), 2)
+        self.assertEqual(request['candidates'][0]['holder'], canonical['holder'])
+        self.assertEqual(request['candidates'][0]['aliases'], ['rusty key'])
+        self.assertEqual(request['context']['recent_exchanges'], game['history']['recentEvents'][-6:])
+        self.assertEqual(proposal_candidate, original)
 
     def test_failed_turn_does_not_save_learned_alias(self):
         game = new_game(7)
@@ -174,7 +252,7 @@ class GameEngineTests(unittest.TestCase):
             'items': [{'name': 'rusty key', 'description': 'Iron.', 'interaction': 'take'}],
             'locations': [], 'npcs': [],
         })
-        calls['comparator'] = FakeCall({'same_entity': True})
+        calls['comparator'] = SelectingComparator()
         calls['narrator'].data = {}
         original = copy.deepcopy(game)
         with self.assertRaises(LLMError):
@@ -299,13 +377,13 @@ class GameEngineTests(unittest.TestCase):
                     'name': 'mug', 'description': 'A glass of ale.', 'interaction': 'take',
                 }
                 calls = fake_calls({'items': [proposal], 'locations': [], 'npcs': []})
-                calls['comparator'] = FakeCall({'same_entity': same_entity})
+                calls['comparator'] = SelectingComparator() if same_entity else FakeCall({'outcome': 'new'})
                 original = copy.deepcopy(game)
                 updated, result = process_turn(game, 'Pick up the mug of beer.', calls)
                 self.assertEqual(game, original)
                 self.assertEqual(len(calls['comparator'].inputs), 1)
                 comparison = json.loads(calls['comparator'].inputs[0])
-                self.assertEqual(comparison['candidate_entity']['name'], 'mug of beer')
+                self.assertEqual(comparison['candidates'][0]['name'], 'mug of beer')
                 self.assertEqual(comparison['proposed_entity']['name'], 'mug')
                 self.assertEqual(len(result['ignored_interactions']), int(not same_entity))
                 if same_entity:
@@ -361,9 +439,9 @@ class GameEngineTests(unittest.TestCase):
             comparator_context = json.loads(encoded)
             self.assertEqual(
                 set(comparator_context),
-                {'entity_type', 'candidate_entity', 'proposed_entity'},
+                {'entity_type', 'candidates', 'proposed_entity', 'context'},
             )
-            self.assertFalse(contains_key(comparator_context, 'id'))
+            self.assertTrue(contains_key(comparator_context, 'id'))
             self.assertFalse(contains_key(comparator_context, 'status'))
         item = updated['world']['items'][0]
         self.assertEqual(item['name'], 'Iron key')
@@ -457,7 +535,7 @@ class GameEngineTests(unittest.TestCase):
             self.assertFalse(contains_key(payload, 'status'))
             self.assertFalse(contains_key(payload, 'traversable'))
         comparator_payload = json.loads(calls['comparator'].inputs[0])
-        self.assertFalse(contains_key(comparator_payload, 'id'))
+        self.assertTrue(contains_key(comparator_payload, 'id'))
         self.assertFalse(contains_key(comparator_payload, 'status'))
 
     def test_manager_inputs_are_domain_scoped_and_history_is_summarized(self):
@@ -661,7 +739,8 @@ class GameEngineTests(unittest.TestCase):
             ],
             'npcs': originals['npcs']['npcs'],
         })
-        self.assertEqual(len(calls['comparator'].inputs), 0)
+        self.assertEqual(len(calls['comparator'].inputs), 1)
+        self.assertEqual(json.loads(calls['comparator'].inputs[0])['entity_type'], 'npcs')
         self.assertEqual(updated['world']['items'][0]['name'], 'Key')
         self.assertEqual(updated['currentLocationId'], updated['world']['locations'][1]['id'])
         self.assertEqual(updated['world']['npcs'][0]['name'], 'Mira')
@@ -1273,11 +1352,10 @@ class GameEngineTests(unittest.TestCase):
             'locations': [],
             'npcs': [{'name': 'Mira', 'description': 'A keeper.', 'interaction': 'encounter'}],
         })
-        calls['comparator'] = FakeCall({'same_entity': True})
-
         updated, _ = process_turn(game, 'Take the key and meet Mira.', calls)
 
-        self.assertEqual(calls['comparator'].inputs, [])
+        self.assertEqual([json.loads(value)['entity_type'] for value in calls['comparator'].inputs],
+                         ['npcs'])
         self.assertEqual(updated['world']['items'][0]['name'], 'Key')
         self.assertEqual(updated['world']['npcs'][0]['name'], 'Mira')
 
@@ -1299,16 +1377,17 @@ class GameEngineTests(unittest.TestCase):
         class KeyComparator(FakeCall):
             def run(self, user_input):
                 self.data = {
-                    'same_entity': json.loads(user_input)['candidate_entity']['name'] == 'Iron key',
+                    'outcome': 'existing', 'entity_id': 'carried-key',
                 }
                 return super().run(user_input)
 
         calls['comparator'] = KeyComparator({})
         updated, result = process_turn(game, 'Drop the key.', calls)
 
-        candidates = [json.loads(value)['candidate_entity']['name']
-                      for value in calls['comparator'].inputs]
+        candidates = [entity['name'] for value in calls['comparator'].inputs
+                      for entity in json.loads(value)['candidates']]
         self.assertEqual(candidates, ['Coin', 'Iron key'])
+        self.assertEqual(len(calls['comparator'].inputs), 1)
         self.assertEqual(result['reconciled_entities']['items'][0]['id'], 'carried-key')
         self.assertEqual(updated['world']['items'][2]['holder'],
                          {'type': 'location', 'id': game['currentLocationId']})
@@ -1334,13 +1413,16 @@ class GameEngineTests(unittest.TestCase):
             'items': [{'name': 'Key', 'description': 'An iron key.', 'interaction': 'take'}],
             'locations': [], 'npcs': [],
         })
-        calls['comparator'] = FakeCall({'same_entity': False})
+        calls['comparator'] = FakeCall({'outcome': 'new'})
 
         updated, _ = process_turn(game, 'Take a key.', calls)
 
-        self.assertEqual([json.loads(value)['candidate_entity']['name']
-                          for value in calls['comparator'].inputs],
+        item_requests = [json.loads(value) for value in calls['comparator'].inputs
+                         if json.loads(value)['entity_type'] == 'items']
+        self.assertEqual([entity['name'] for request in item_requests
+                          for entity in request['candidates']],
                          ['Local', 'Carried', 'NPC item'])
+        self.assertEqual(len(item_requests), 1)
         self.assertEqual(len(updated['world']['items']), 6)
 
     def test_no_semantic_drop_match_is_ignored_without_creation(self):
@@ -1353,7 +1435,7 @@ class GameEngineTests(unittest.TestCase):
             'items': [{'name': 'Key', 'description': 'A key.', 'interaction': 'drop'}],
             'locations': [], 'npcs': [],
         })
-        calls['comparator'] = FakeCall({'same_entity': False})
+        calls['comparator'] = FakeCall({'outcome': 'new'})
         original = copy.deepcopy(game)
         with self.assertLogs('backend.game_engine', level='WARNING'):
             updated, result = process_turn(game, 'Drop a key.', calls)
@@ -1401,12 +1483,12 @@ class GameEngineTests(unittest.TestCase):
             'items': [{'name': 'the key', 'description': 'A carried key.', 'interaction': 'drop'}],
             'locations': [], 'npcs': [],
         })
-        calls['comparator'] = FakeCall({'same_entity': True})
+        calls['comparator'] = SelectingComparator(ambiguous=True)
         original = copy.deepcopy(game)
         with self.assertRaisesRegex(InvalidTurnResponse, 'multiple candidates matched'):
             process_turn(game, 'Drop the key.', calls)
         self.assertEqual(game, original)
-        self.assertEqual(len(calls['comparator'].inputs), 2)
+        self.assertEqual(len(calls['comparator'].inputs), 1)
 
     def test_second_identical_item_matches_without_comparator(self):
         game = new_game(7)
@@ -1434,7 +1516,7 @@ class GameEngineTests(unittest.TestCase):
                 }],
                 'locations': [], 'npcs': [],
             })
-            calls['comparator'] = FakeCall({'same_entity': False})
+            calls['comparator'] = FakeCall({'outcome': 'new'})
             events = []
 
             with self.subTest(normalize=normalize):
@@ -1447,7 +1529,7 @@ class GameEngineTests(unittest.TestCase):
                              {'type': 'player', 'id': game['playerId']})
             self.assertEqual(result['reconciled_entities']['items'][0]['id'], 'beer-existing')
             match = next(event for event in events if event['component'] == 'comparator')
-            self.assertEqual(match['response'], {'same_entity': True})
+            self.assertEqual(match['response'], {'outcome': 'existing', 'entity_id': 'beer-existing'})
             self.assertIn('no LLM call needed', match['reason'])
 
     def test_location_ambiguity_debug_identifies_all_matches(self):
@@ -1461,19 +1543,20 @@ class GameEngineTests(unittest.TestCase):
         game['world']['locations'].extend(locations)
         calls = fake_calls()
         calls['map'].data = movement_intent('the tavern')
-        calls['comparator'] = FakeCall({'same_entity': True})
+        calls['comparator'] = SelectingComparator(ambiguous=True)
         events = []
         original = copy.deepcopy(game)
         with self.assertRaisesRegex(InvalidTurnResponse, 'multiple candidates matched'):
             process_turn(game, 'Enter the tavern.', calls, on_progress=events.append)
         self.assertEqual(game, original)
         comparator_events = [event for event in events if event['component'] == 'comparator']
-        self.assertEqual(comparator_events[-2]['status'], 'started')
-        self.assertEqual(comparator_events[-2]['request'], {
-            'entity_type': 'locations',
-            'proposed_entity': {'name': 'the tavern',
-                                'description': 'A place known as the tavern.'},
+        self.assertEqual(comparator_events[-2]['status'], 'received')
+        self.assertEqual(comparator_events[0]['request']['entity_type'], 'locations')
+        self.assertEqual(comparator_events[0]['request']['proposed_entity'], {
+            'name': 'the tavern', 'description': 'A place known as the tavern.',
         })
+        self.assertEqual([entity['id'] for entity in comparator_events[0]['request']['candidates']],
+                         ['tavern', 'forest'])
         self.assertEqual(comparator_events[-1]['status'], 'failed')
         self.assertEqual(comparator_events[-1]['response']['matched_entities'], [
             {key: location[key] for key in ('name', 'description')}
@@ -1520,7 +1603,7 @@ class GameEngineTests(unittest.TestCase):
                 'items': [{'name': name, 'description': description, 'interaction': 'drop'}],
                 'locations': [], 'npcs': [],
             })
-            calls['comparator'] = FakeCall({'same_entity': False})
+            calls['comparator'] = FakeCall({'outcome': 'new'})
             with self.subTest(name=name, description=description):
                 updated, result = process_turn(game, 'Drop the iron key.', calls)
             self.assertEqual(calls['comparator'].inputs, [])
@@ -1540,7 +1623,7 @@ class GameEngineTests(unittest.TestCase):
                 {'name': 'Tavern', 'description': 'A cozy tavern.', 'interaction': 'enter'},
             ],
         })
-        calls['comparator'] = FakeCall({'same_entity': False})
+        calls['comparator'] = FakeCall({'outcome': 'new'})
         updated, _ = process_turn(game, 'Enter the tavern.', calls)
         self.assertEqual(len(calls['comparator'].inputs), 0)
         self.assertEqual(updated['currentLocationId'], updated['world']['locations'][1]['id'])
@@ -1556,7 +1639,7 @@ class GameEngineTests(unittest.TestCase):
                 {'name': 'Tavern', 'description': 'A cozy tavern.', 'interaction': 'enter'},
             ],
         })
-        calls['comparator'] = FakeCall({'same_entity': True})
+        calls['comparator'] = SelectingComparator()
 
         updated, result = process_turn(game, 'Enter the tavern.', calls)
 
@@ -1605,19 +1688,52 @@ class GameEngineTests(unittest.TestCase):
             with self.subTest(response=response), self.assertRaises(LLMError):
                 narrator.validate_response(response)
 
-    def test_comparator_requires_boolean_only(self):
+    def test_comparator_requires_valid_resolution_shape(self):
         comparator = ComparatorCall(transport=lambda *args: {})
-        for value in (True, False):
-            self.assertEqual(comparator.validate_response({'same_entity': value}),
-                             {'same_entity': value})
+        for response in (
+                {'outcome': 'new'},
+                {'outcome': 'existing', 'entity_id': 'key'},
+                {'outcome': 'ambiguous', 'candidate_ids': ['iron', 'brass']}):
+            self.assertEqual(comparator.validate_response(response), response)
         invalid_responses = (
             {}, None, {'same_entity': 'yes'}, {'same_entity': 1},
             {'same_entity': True, 'id': 'forbidden'},
             {'already_present': True, 'matched_index': 0},
+            {'outcome': 'unknown'}, {'outcome': 'existing'},
+            {'outcome': 'existing', 'entity_id': ''},
+            {'outcome': 'existing', 'entity_id': 1},
+            {'outcome': 'new', 'entity_id': 'key'},
+            {'outcome': 'ambiguous', 'candidate_ids': ['key']},
+            {'outcome': 'ambiguous', 'candidate_ids': ['key', 'key']},
+            {'outcome': 'ambiguous', 'candidate_ids': ['key', None]},
+            {'outcome': 'ambiguous', 'candidate_ids': ['key', []]},
+            {'outcome': 'ambiguous', 'candidate_ids': ['key', 'coin'], 'entity_id': 'key'},
         )
         for response in invalid_responses:
             with self.subTest(response=response), self.assertRaises(LLMError):
                 comparator.validate_response(response)
+
+    def test_comparator_normalizes_flat_provider_schema(self):
+        comparator = ComparatorCall(transport=lambda *args: {})
+        for wire, expected in (
+                ({'outcome': 'existing', 'entity_id': 'key', 'candidate_ids': []},
+                 {'outcome': 'existing', 'entity_id': 'key'}),
+                ({'outcome': 'new', 'entity_id': None, 'candidate_ids': []},
+                 {'outcome': 'new'}),
+                ({'outcome': 'ambiguous', 'entity_id': None, 'candidate_ids': ['key', 'coin']},
+                 {'outcome': 'ambiguous', 'candidate_ids': ['key', 'coin']})):
+            with self.subTest(wire=wire):
+                self.assertEqual(comparator.validate_response(wire), expected)
+        for wire in (
+                {'outcome': 'existing'},
+                {'outcome': 'existing', 'entity_id': None, 'candidate_ids': []},
+                {'outcome': 'existing', 'entity_id': 'key', 'candidate_ids': ['coin']},
+                {'outcome': 'new', 'entity_id': 'key', 'candidate_ids': []},
+                {'outcome': 'new', 'entity_id': None, 'candidate_ids': ['key']},
+                {'outcome': 'ambiguous', 'entity_id': None, 'candidate_ids': ['key']},
+                {'outcome': 'ambiguous', 'entity_id': 'key', 'candidate_ids': ['key', 'coin']}):
+            with self.subTest(wire=wire), self.assertRaises(LLMError):
+                comparator.validate_response(wire)
 
     def test_invalid_comparator_result_does_not_mutate_game(self):
         game = new_game(7)
@@ -1632,7 +1748,7 @@ class GameEngineTests(unittest.TestCase):
         calls['comparator'] = FakeCall({'same_entity': 'yes'})
         original = copy.deepcopy(game)
 
-        with self.assertRaisesRegex(InvalidTurnResponse, 'must return boolean'):
+        with self.assertRaisesRegex(InvalidTurnResponse, 'response must be existing'):
             process_turn(game, 'Find a key.', calls)
 
         self.assertEqual(game, original)
@@ -1651,7 +1767,7 @@ class GameEngineTests(unittest.TestCase):
         original = copy.deepcopy(game)
         events = []
 
-        with self.assertRaisesRegex(InvalidTurnResponse, 'boolean same_entity only'):
+        with self.assertRaisesRegex(InvalidTurnResponse, 'response must be existing'):
             process_turn(game, 'Find a key.', calls, on_progress=events.append)
 
         self.assertEqual(game, original)
@@ -1659,10 +1775,10 @@ class GameEngineTests(unittest.TestCase):
         self.assertEqual([event['status'] for event in comparator_events],
                          ['started', 'received', 'failed'])
         failed = comparator_events[-1]
-        self.assertEqual(failed['request']['candidate_entity'],
-                         {'name': 'Coin', 'description': 'A gold coin.'})
+        self.assertEqual(failed['request']['candidates'][0]['id'], 'coin')
+        self.assertEqual(failed['request']['candidates'][0]['name'], 'Coin')
         self.assertEqual(failed['response'], {'already_present': True, 'matched_index': 1})
-        self.assertIn('boolean same_entity only', failed['error'])
+        self.assertIn('response must be existing', failed['error'])
         self.assertEqual(events[-1]['component'], 'narrator')
         self.assertEqual(events[-1]['status'], 'skipped')
         self.assertEqual(calls['narrator'].inputs, [])

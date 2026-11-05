@@ -7,7 +7,7 @@ test('one operation updates in place and preserves request and provider details'
   for (const event of [
     { component: 'comparator', status: 'started', request: { name: 'Tavern' } },
     { component: 'map', status: 'started' },
-    { component: 'comparator', status: 'received', response: { same_entity: true }, provider: 'test' },
+    { component: 'comparator', status: 'received', response: { outcome: 'existing', entity_id: 'tavern' }, provider: 'test' },
     { component: 'comparator', status: 'completed', matched_entity: { name: 'Tavern' } },
   ]) events = updateProgress(events, event)
   assert.equal(events.length, 2)

@@ -75,7 +75,7 @@ test('runLLMCall posts input and optional history to the named call', async (t) 
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     requests.push({ url, options })
     return new Response(JSON.stringify({
-      data: { same_entity: true }, provider: 'p', model: 'm',
+      data: { outcome: 'existing', entity_id: 'crypt' }, provider: 'p', model: 'm',
     }), {
       headers: { 'Content-Type': 'application/json' },
     })
@@ -83,7 +83,7 @@ test('runLLMCall posts input and optional history to the named call', async (t) 
   })
 
   assert.deepEqual(await runLLMCall('comparator', 'a crypt'), {
-    data: { same_entity: true }, provider: 'p', model: 'm',
+    data: { outcome: 'existing', entity_id: 'crypt' }, provider: 'p', model: 'm',
   })
   const history = [{ role: 'user', content: 'hi' }]
   await runLLMCall('comparator', 'a crypt', history)

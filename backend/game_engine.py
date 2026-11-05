@@ -227,59 +227,75 @@ def _resolve_entity(state, collection_name, proposed, comparator, current_locati
             logger.info('Resolved text %s match without an LLM call.', collection_name)
             comparator_input = {
                 'entity_type': collection_name,
-                'candidate_entity': _display_entity(entity),
+                'candidates': [{**_display_entity(entity),
+                                'id': entity.get('id') or _new_id('candidate')}],
                 'proposed_entity': _display_entity(proposed),
             }
             progress('completed', llm=False, request=comparator_input,
                      reason=reason,
-                     response={'same_entity': True},
+                     response={'outcome': 'existing',
+                               'entity_id': comparator_input['candidates'][0]['id']},
                      matched_entity=_display_entity(entity))
             return entity
-        matches = []
+        candidate_by_id = {}
+        displayed_candidates = []
         for entity in candidates:
-            comparator_input = {
-                'entity_type': collection_name,
-                'candidate_entity': {
-                    **_display_entity(entity),
-                    **({'aliases': list(entity['aliases'])} if entity.get('aliases') else {}),
-                },
-                'proposed_entity': _display_entity(proposed),
-            }
-            progress('started', request=comparator_input)
-            try:
-                result = _run_logged('comparator', comparator, comparator_input)
-            except LLMError as error:
-                progress('failed', request=comparator_input, error=str(error),
-                         response=getattr(error, 'details', None))
-                raise
-            progress('received', response=result.data, provider=result.provider, model=result.model)
-            if (not isinstance(result.data, dict) or set(result.data) != {'same_entity'}
-                    or not isinstance(result.data['same_entity'], bool)):
-                error = 'Comparator must return boolean same_entity only.'
-                progress('failed', request=comparator_input, response=result.data, error=error)
-                raise InvalidTurnResponse(error)
-            details = {'matched_entity': _display_entity(entity)} if result.data['same_entity'] else {}
-            progress('completed', response=result.data, **details)
-            if result.data['same_entity']:
-                matches.append(entity)
-        if len(matches) > 1:
-            error = f'Ambiguous {collection_name} identity: multiple candidates matched.'
-            progress('started', llm=False, request={
-                'entity_type': collection_name,
-                'proposed_entity': _display_entity(proposed),
+            # Current-turn proposals and command targets have no canonical ID yet.
+            candidate_id = entity.get('id') or _new_id('candidate')
+            if candidate_id in candidate_by_id:
+                raise InvalidTurnResponse('Comparator candidates must have unique IDs.')
+            candidate_by_id[candidate_id] = entity
+            displayed_candidates.append({
+                **_display_entity(entity), 'id': candidate_id,
+                **{field: copy.deepcopy(entity[field]) for field in (
+                    'aliases', 'holder', 'currentLocationId', 'locationId',
+                ) if field in entity},
             })
-            progress('failed', llm=False, error=error, response={
-                'matched_entities': [_display_entity(entity) for entity in matches],
+        comparator_input = {
+            'entity_type': collection_name,
+            'candidates': displayed_candidates,
+            'proposed_entity': _display_entity(proposed),
+            'context': {
+                'current_location_id': current_location_id,
+                'player_id': state['playerId'],
+                'recent_exchanges': copy.deepcopy(state['history'].get('recentEvents', [])[-6:]),
+            },
+        }
+        progress('started', request=comparator_input)
+        try:
+            result = _run_logged('comparator', comparator, comparator_input)
+        except LLMError as error:
+            progress('failed', request=comparator_input, error=str(error),
+                     response=getattr(error, 'details', None))
+            raise
+        progress('received', response=result.data, provider=result.provider, model=result.model)
+        try:
+            resolution = ComparatorCall.validate_response(result.data)
+            selected_ids = ([resolution['entity_id']] if resolution['outcome'] == 'existing'
+                            else resolution.get('candidate_ids', []))
+            if any(candidate_id not in candidate_by_id for candidate_id in selected_ids):
+                raise InvalidTurnResponse('Comparator returned an ID outside the eligible candidates.')
+        except (LLMResponseError, InvalidTurnResponse) as error:
+            progress('failed', request=comparator_input, response=result.data, error=str(error))
+            raise InvalidTurnResponse(str(error)) from error
+        if resolution['outcome'] == 'ambiguous':
+            error = f'Ambiguous {collection_name} identity: multiple candidates matched.'
+            progress('failed', request=comparator_input, error=error, response={
+                **resolution,
+                'matched_entities': [_display_entity(candidate_by_id[value])
+                                     for value in resolution['candidate_ids']],
             })
             raise InvalidTurnResponse(error)
-        if matches:
-            entity = matches[0]
+        if resolution['outcome'] == 'existing':
+            entity = candidate_by_id[resolution['entity_id']]
+            progress('completed', response=resolution, matched_entity=_display_entity(entity))
             if (any(entity is canonical for canonical in entities)
                     and name and all(
                         _normalized_text(value) != name
                         for value in (entity['name'], *entity.get('aliases', [])))):
                 entity.setdefault('aliases', []).append(proposed['name'].strip())
             return entity
+        progress('completed', response=resolution)
     else:
         progress('skipped', llm=False, entity_type=collection_name,
                  proposed_entity=_display_entity(proposed),

@@ -1,11 +1,22 @@
 {
   "type": "object",
   "properties": {
-    "same_entity": {
-      "type": "boolean",
-      "description": "Whether proposed_entity and candidate_entity refer to the same actual entity, not merely related entities. A tavern is not the square outside it."
+    "outcome": {
+      "type": "string",
+      "enum": ["new", "existing", "ambiguous"],
+      "description": "Compare the actual referent, not related things. A drink is not the person holding it. new means no candidate matches, not permission to create; existing selects exactly one matching supplied candidate; ambiguous means multiple candidates could be the referent."
+    },
+    "entity_id": {
+      "type": ["string", "null"],
+      "description": "For existing: the exact ID of the selected supplied candidate. For new or ambiguous: null."
+    },
+    "candidate_ids": {
+      "type": "array",
+      "items": {"type": "string"},
+      "uniqueItems": true,
+      "description": "For ambiguous: at least two distinct exact IDs of plausible matching candidates. For existing or new: an empty array."
     }
   },
-  "required": ["same_entity"],
+  "required": ["outcome", "entity_id", "candidate_ids"],
   "additionalProperties": false
 }
