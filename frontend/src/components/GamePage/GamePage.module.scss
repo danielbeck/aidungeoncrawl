@@ -23,11 +23,14 @@
 }
 
 .eyebrow {
+  display: flex;
+  align-items: center;
   color: #6c6256;
   font-size: 0.8rem;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+  margin: 1em 0;
 }
 
 .layout {

@@ -75,10 +75,10 @@ Gameplay validates changes on a candidate state and commits atomically, with
 version checks and request-ID deduplication. Invalid responses and processing
 failures leave saved gameplay unchanged.
 
-Application errors are logged in `backend/logs/flask_error.log`; LLM diagnostics
-are also written to a rotating `backend/logs/llm.log`. These can contain player
-actions, narrative context, and model output. Keep logs and databases private.
-Logging exists, but this is not a dedicated, comprehensive security audit trail.
+Application errors and LLM diagnostics are written to rotating logs in
+`backend/logs/`. These can contain player actions, narrative context, and model
+output. Keep logs and databases private. Logging exists, but this is not a
+dedicated, comprehensive security audit trail.
 
 ## Operational checklist
 

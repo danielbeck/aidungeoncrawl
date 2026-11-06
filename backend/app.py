@@ -10,7 +10,6 @@ import logging
 from logging.handlers import RotatingFileHandler
 from flask.logging import default_handler
 import traceback
-from collections import deque
 try:
     from backend.session_secret import load_session_secret, load_settings
     from backend.account_schema import ensure_account_schema
@@ -61,53 +60,59 @@ try:
     os.makedirs(logs_dir, exist_ok=True)
 except Exception:
     pass
-handler = logging.FileHandler(log_path)
-handler.setLevel(logging.ERROR)
-formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
-handler.setFormatter(formatter)
-app.logger.addHandler(handler)
+handler = next((
+    existing for existing in app.logger.handlers
+    if isinstance(existing, RotatingFileHandler)
+    and existing.baseFilename == os.path.abspath(log_path)
+), None)
+if handler is None:
+    for existing in app.logger.handlers:
+        if (isinstance(existing, logging.FileHandler)
+                and existing.baseFilename == os.path.abspath(log_path)):
+            app.logger.removeHandler(existing)
+            existing.close()
+    handler = RotatingFileHandler(
+        log_path, maxBytes=2 * 1024 * 1024, backupCount=3, encoding='utf-8',
+    )
+    handler.setLevel(logging.ERROR)
+    handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+    app.logger.addHandler(handler)
 
 llm_log_path = os.path.join(logs_dir, 'llm.log')
-llm_handler = RotatingFileHandler(
-    llm_log_path, maxBytes=2 * 1024 * 1024, backupCount=3, encoding='utf-8',
+diagnostic_logger_names = (
+    'backend.harness.llm_calls', 'harness.llm_calls',
+    'backend.llm_calls', 'llm_calls', 'backend.game_engine', 'game_engine',
+    'backend.tool_mode', 'tool_mode',
 )
-llm_handler.setLevel(logging.INFO)
-llm_handler.setFormatter(logging.Formatter(
-    '%(asctime)s %(levelname)s %(name)s %(message)s',
-))
-for logger_name in (
-        'backend.harness.llm_calls', 'harness.llm_calls',
-        'backend.llm_calls', 'llm_calls', 'backend.game_engine', 'game_engine',
-        'backend.tool_mode', 'tool_mode'):
+llm_handler = next((
+    existing
+    for logger_name in diagnostic_logger_names
+    for existing in logging.getLogger(logger_name).handlers
+    if isinstance(existing, RotatingFileHandler)
+    and existing.baseFilename == os.path.abspath(llm_log_path)
+), None)
+if llm_handler is None:
+    llm_handler = RotatingFileHandler(
+        llm_log_path, maxBytes=2 * 1024 * 1024, backupCount=3, encoding='utf-8',
+    )
+    llm_handler.setLevel(logging.INFO)
+    llm_handler.setFormatter(logging.Formatter(
+        '%(asctime)s %(levelname)s %(name)s %(message)s',
+    ))
+for logger_name in diagnostic_logger_names:
     diagnostic_logger = logging.getLogger(logger_name)
     diagnostic_logger.setLevel(logging.INFO)
-    diagnostic_logger.addHandler(default_handler)
-    diagnostic_logger.addHandler(llm_handler)
+    if default_handler not in diagnostic_logger.handlers:
+        diagnostic_logger.addHandler(default_handler)
+    if llm_handler not in diagnostic_logger.handlers:
+        diagnostic_logger.addHandler(llm_handler)
     diagnostic_logger.propagate = False
 
-
-def _trim_log(path, max_lines=10000):
-    try:
-        # read last max_lines and rewrite file to keep size bounded
-        with open(path, 'r') as f:
-            dq = deque(f, maxlen=max_lines)
-        with open(path, 'w') as f:
-            f.writelines(dq)
-    except Exception:
-        pass
 
 # Database path
 # Prefer APP_BASE_DIR set by `api.cgi` when running under CGI/chroot.
 BASE_DIR = os.environ.get('APP_BASE_DIR') or os.path.dirname(os.path.abspath(__file__))
 DB_PATH = settings.get('DB_PATH') or os.path.join(BASE_DIR, 'database', 'app.db')
-
-# Debug: log APP_BASE_DIR and DB_PATH to flask_error.log
-try:
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs', 'flask_error.log'), 'a') as f:
-        f.write(f"[DEBUG] APP_BASE_DIR: {BASE_DIR}\n")
-        f.write(f"[DEBUG] DB_PATH: {DB_PATH}\n")
-except Exception:
-    pass
 
 def get_db():
     """Get database connection"""
@@ -251,7 +256,6 @@ def internal_server_error(e):
     try:
         tb = traceback.format_exc()
         app.logger.error(f'Internal server error: {request.url}\n{tb}')
-        _trim_log(log_path, max_lines=10000)
     except Exception:
         pass
     
@@ -275,7 +279,6 @@ def handle_exception(e):
     try:
         tb = traceback.format_exc()
         app.logger.error(f'Unhandled exception: {request.url}\n{tb}')
-        _trim_log(log_path, max_lines=10000)
     except Exception:
         pass
     

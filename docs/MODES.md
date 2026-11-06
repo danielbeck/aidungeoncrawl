@@ -1,4 +1,4 @@
-## Freeform Mode
+### Freeform Mode
 
 Freeform treats the LLM as a storyteller rather than a world-state manager.
 The narrator receives the player's action and a continuity summary, or the
@@ -51,7 +51,7 @@ sequenceDiagram
     Note over FF,L: No manager calls, comparator calls, or tools in Freeform.
 ```
 
-## Direct Mode
+### Direct Mode
 
 Direct extends Freeform's storytelling with explicit world-state updates.
 One narrator LLM receives the action, continuity summary, player ID, and a
@@ -99,7 +99,7 @@ sequenceDiagram
     Note over D,L: Provider or validation failures prevent a successful turn.
 ```
 
-## Managed Mode
+### Managed Mode
 
 Managed refines Direct's single-call world updates by splitting interpretation
 across specialist LLM calls. Inventory, movement
@@ -189,7 +189,7 @@ sequenceDiagram
     Note over M,L: No native tools are offered to the LLM in Managed mode.
 ```
 
-## Tool Using Mode
+### Tool Using Mode
 
 Tool Using lets a game-master LLM choose the sequence of world changes. It
 receives the action, continuity summary, and current scene alongside native

@@ -205,7 +205,8 @@ function GamePage() {
     <section className={styles.game} aria-label="Adventure">
       <header className={styles.heading}>
         <div>
-          <p className={styles.eyebrow}>Your&nbsp;
+          <div className={styles.eyebrow}>
+            Your&nbsp;
             <fieldset className={styles.modeSwitch} disabled={submitting}>
               <legend>Storytelling mode</legend>
               {modeOptions.map(option => <label key={option.value} title={option.title}>
@@ -216,7 +217,7 @@ function GamePage() {
               </label>)}
             </fieldset>
             &nbsp;adventure
-          </p>
+          </div>
           <h2>{location?.name || 'Unknown location'}</h2>
         </div>
         <form className={styles.newGameForm} onSubmit={startNewGame}>
