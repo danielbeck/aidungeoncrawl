@@ -235,9 +235,10 @@ def prepare_history():
         result = HistorySummarizerCall(settings=current_app.config['llm_settings']).run(
             json.dumps({'completed_history': history['recentEvents']}, ensure_ascii=False))
         summary = HistorySummarizerCall.validate_response(result.data)['summary']
-    except LLMError:
+    except LLMError as error:
         current_app.logger.exception('History preparation failed for user %s', user_id)
-        return jsonify({'error': 'History preparation failed. It will be retried on the next action.'}), 502
+        return jsonify({'error': f'History preparation failed: {error} '
+                        'Your turn is saved; preparation can be retried.'}), 502
     conn = _get_db()
     try:
         conn.execute('BEGIN IMMEDIATE')

@@ -11,6 +11,7 @@ from flask import Flask
 from backend.endpoints.game import bp
 from backend.game_engine import new_game
 from backend.harness.llm_provider import LLMError
+from backend.harness import llm_provider
 
 
 class HistoryPreparationTests(unittest.TestCase):
@@ -81,4 +82,40 @@ class HistoryPreparationTests(unittest.TestCase):
                    side_effect=LLMError('unavailable')), self.assertLogs(level='ERROR'):
             response = self.prepare()
         self.assertEqual(response.status_code, 502)
+        self.assertIn('unavailable', response.get_json()['error'])
         self.assertEqual(self.read(), (self.state, 4))
+
+
+class SummarizerProviderTests(unittest.TestCase):
+    def test_schema_and_generation_budget_reach_both_providers(self):
+        schema = {'type': 'object', 'properties': {'summary': {'type': 'string'}},
+                  'required': ['summary'], 'additionalProperties': False}
+        for provider in ('ollama', 'openrouter'):
+            message = {'content': '{"summary":"Completed events."}'}
+            response = ({'message': message, 'done_reason': 'stop'} if provider == 'ollama'
+                        else {'choices': [{'message': message, 'finish_reason': 'stop'}]})
+            with self.subTest(provider=provider), patch.object(
+                    llm_provider, '_post_json', return_value=response) as post:
+                result = llm_provider.chat([], schema, 'history_summarizer', settings={
+                    'LLM_PROVIDER': provider, 'OPENROUTER_API_KEY': 'test-key'})
+            self.assertEqual(json.loads(result['response']), {'summary': 'Completed events.'})
+            payload = post.call_args[0][1]
+            if provider == 'ollama':
+                self.assertEqual(payload['format'], schema)
+                self.assertEqual(payload['options'],
+                                 {'num_ctx': 32768, 'num_predict': 8192, 'temperature': 0})
+                self.assertFalse(payload['think'])
+            else:
+                self.assertTrue(payload['response_format']['json_schema']['strict'])
+                self.assertEqual(payload['max_tokens'], 8192)
+
+    def test_truncation_is_explicit_for_both_providers(self):
+        for provider in ('ollama', 'openrouter'):
+            message = {'content': '{"summary":"Incomplete'}
+            response = ({'message': message, 'done_reason': 'length'} if provider == 'ollama'
+                        else {'choices': [{'message': message, 'finish_reason': 'length'}]})
+            with self.subTest(provider=provider), patch.object(
+                    llm_provider, '_post_json', return_value=response):
+                with self.assertRaisesRegex(LLMError, 'truncated'):
+                    llm_provider.chat([], {'type': 'object'}, 'history_summarizer', settings={
+                        'LLM_PROVIDER': provider, 'OPENROUTER_API_KEY': 'test-key'})

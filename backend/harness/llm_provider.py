@@ -126,7 +126,7 @@ def _tool_response(message, provider, model):
     }
 
 
-def call_ollama(messages, schema, config, tools=None):
+def call_ollama(messages, schema, config, tools=None, schema_name=None):
     payload = {
         'model': config['ollama_model'],
         'messages': _tool_messages(messages, 'ollama') if tools is not None else messages,
@@ -136,11 +136,19 @@ def call_ollama(messages, schema, config, tools=None):
         payload['options'] = {'temperature': config['temperature']}
     if schema is not None:
         payload['format'] = schema
+    if schema_name == 'history_summarizer':
+        payload.setdefault('options', {}).update({
+            'num_ctx': 32768, 'num_predict': 8192, 'temperature': 0,
+        })
+        payload['think'] = False
     if tools is not None:
         payload['tools'] = tools
         payload.setdefault('options', {}).update({'num_ctx': 16384, 'num_predict': 2048})
 
     data = _post_json(f"{config['ollama_url']}/api/chat", payload)
+    if schema_name == 'history_summarizer' and data.get('done_reason') == 'length':
+        raise LLMError('History summarizer output was truncated before the JSON completed.',
+                       code='LLM_RESPONSE_TRUNCATED')
     message = data.get('message')
     if tools is not None:
         if data.get('done_reason') == 'length':
@@ -176,6 +184,9 @@ def call_openrouter(messages, schema, schema_name, config, tools=None):
         }
         # Only route to providers that honor response_format; some free models ignore it.
         payload['provider'] = {'require_parameters': True}
+    if schema_name == 'history_summarizer':
+        payload['max_tokens'] = 8192
+        payload['temperature'] = 0
     if tools is not None:
         payload['tools'] = tools
         payload['tool_choice'] = 'auto'
@@ -192,6 +203,10 @@ def call_openrouter(messages, schema, schema_name, config, tools=None):
         },
     )
     choices = data.get('choices') or []
+    if (schema_name == 'history_summarizer' and choices
+            and choices[0].get('finish_reason') == 'length'):
+        raise LLMError('History summarizer output was truncated before the JSON completed.',
+                       code='LLM_RESPONSE_TRUNCATED')
     message = choices[0].get('message') if choices else None
     if tools is not None:
         if choices and choices[0].get('finish_reason') == 'length':
@@ -216,7 +231,7 @@ def chat(messages, schema=None, schema_name=None, settings=None, config=None, te
         config = {**config, 'temperature': temperature}
     if config['provider'] == 'openrouter':
         return call_openrouter(messages, schema, schema_name, config, tools=tools)
-    return call_ollama(messages, schema, config, tools=tools)
+    return call_ollama(messages, schema, config, tools=tools, schema_name=schema_name)
 
 
 def call_llm(prompt, schema, schema_name=None, settings=None, config=None):

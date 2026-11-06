@@ -38,6 +38,12 @@ may be stale. Switching back does not reconstruct missed world changes.
 
 ### Tool using mode
 
+History summarization uses provider-constrained JSON output. Ollama summarizer
+requests explicitly reserve 32,768 context tokens and 8,192 output tokens,
+disable thinking, and use temperature zero. OpenRouter requests use a strict
+JSON schema and an 8,192-token output budget. Output-budget truncation raises an
+explicit error; incomplete JSON is never repaired or stored as a successful summary.
+
 `tool_using`, labeled **Tool using**, runs a game master conversation with native
 Ollama/OpenRouter function tools. The prompt and tool schemas live in
 `shared/llm/game_master.md` and `shared/llm/game_master.tools.json`.

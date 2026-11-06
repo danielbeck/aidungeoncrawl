@@ -34,3 +34,5 @@ meaningful details, and less when little has happened. Keep short histories
 close to lossless in plot and identity details; compress older material more
 heavily only when approaching the ceiling.
 Do not include IDs or additional fields.
+Finish the summary within the output budget and close the JSON string and object.
+Escape quotes and line breaks inside the string. Return no reasoning or markdown.

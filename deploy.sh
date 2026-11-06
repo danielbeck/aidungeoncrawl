@@ -252,15 +252,15 @@ if [ ! -d "frontend/node_modules" ]; then
 fi
 
 echo "🏗 Building frontend..."
-if (cd frontend && npm run build); then
-    echo "✅ Frontend built. Deploying dist to $REMOTE_DIR"
-     rsync -avz --progress \
-        -e "ssh -o ControlPath=$CONTROL_PATH" \
-        frontend/dist/ $USER@$HOST:$REMOTE_DIR/
-    echo "✅ Frontend deployed to $REMOTE_DIR"
-else
-    echo "⚠️  Frontend build failed — skipping dist deploy"
+if ! (cd frontend && npm run build); then
+    echo "❌ Frontend build failed; deployment stopped so stale assets are not reported as deployed." >&2
+    exit 1
 fi
+echo "✅ Frontend built. Deploying dist to $REMOTE_DIR"
+rsync -avz --progress \
+    -e "ssh -o ControlPath=$CONTROL_PATH" \
+    frontend/dist/ $USER@$HOST:$REMOTE_DIR/
+echo "✅ Frontend deployed to $REMOTE_DIR"
 
 # Ensure .htaccess for SPA routing is deployed with the built frontend
 if [ -f frontend/.htaccess ]; then
