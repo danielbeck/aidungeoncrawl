@@ -430,9 +430,12 @@ class ProviderChatTests(unittest.TestCase):
 class RunCallEndpointTests(unittest.TestCase):
     def setUp(self):
         app = Flask(__name__)
+        app.config['SECRET_KEY'] = 'test'
         app.config['llm_settings'] = {'LLM_PROVIDER': 'ollama'}
         app.register_blueprint(llm_bp)
         self.client = app.test_client()
+        with self.client.session_transaction() as session:
+            session['user_id'] = 1
 
         self.chat_patch = patch('backend.harness.llm_calls.chat')
         self.chat = self.chat_patch.start()
@@ -455,6 +458,14 @@ class RunCallEndpointTests(unittest.TestCase):
         self.assertIn('a flooded crypt', messages[-1]['content'])
         self.assertEqual(schema_name, 'comparator')
         self.assertEqual(self.chat.call_args[1]['settings'], {'LLM_PROVIDER': 'ollama'})
+
+    def test_anonymous_call_is_rejected_before_provider_invocation(self):
+        with self.client.session_transaction() as session:
+            session.clear()
+        response = self.post({'input': 'a flooded crypt'})
+        self.assertEqual(response.status_code, 401)
+        self.assertIn('Authentication', response.get_json()['error'])
+        self.chat.assert_not_called()
 
     def test_passes_history(self):
         history = [{'role': 'user', 'content': 'hi'}, {'role': 'assistant', 'content': 'hello'}]

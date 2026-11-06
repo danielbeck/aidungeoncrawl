@@ -10,6 +10,7 @@ from flask import Flask
 
 from backend.endpoints.game import bp
 from backend.endpoints.llm import bp as llm_bp
+from backend.endpoints.auth import bp as auth_bp
 
 
 def processor(state, action, settings=None, on_progress=None):
@@ -124,10 +125,31 @@ class TurnQuotaTests(unittest.TestCase):
 
 class ProductionSurfaceTests(unittest.TestCase):
     def make_app(self, settings):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = os.path.join(directory.name, 'accounts.db')
+        with sqlite3.connect(path) as db:
+            db.execute('CREATE TABLE users (id INTEGER PRIMARY KEY, auth_version INTEGER)')
+            db.execute('INSERT INTO users VALUES (1, 0)')
+
+        def get_db():
+            connection = sqlite3.connect(path)
+            connection.row_factory = sqlite3.Row
+            return connection
+
         app = Flask(__name__)
-        app.config.update(SECRET_KEY='test', TESTING=True, llm_settings=settings)
+        app.config.update(SECRET_KEY='test', TESTING=True, llm_settings=settings,
+                          get_db=get_db)
+        app.register_blueprint(auth_bp)
         app.register_blueprint(llm_bp)
         return app
+
+    def authenticated_client(self, app):
+        client = app.test_client()
+        with client.session_transaction() as session:
+            session['user_id'] = 1
+            session['auth_version'] = 0
+        return client
 
     def test_free_form_llm_chat_is_absent_in_production(self):
         with patch('backend.endpoints.llm.call_llm') as call:
@@ -139,10 +161,51 @@ class ProductionSurfaceTests(unittest.TestCase):
     def test_free_form_llm_chat_still_works_in_development(self):
         with patch('backend.endpoints.llm.call_llm', return_value={
                 'provider': 'test', 'model': 'test', 'response': json.dumps({'ok': True})}) as call:
-            response = self.make_app({}).test_client().post(
+            response = self.authenticated_client(self.make_app({})).post(
                 '/llm/chat', json={'prompt': 'hello', 'response_format': {'type': 'object'}})
         self.assertEqual(response.status_code, 200)
         call.assert_called_once()
+
+    def test_anonymous_provider_calls_are_rejected(self):
+        for settings in ({}, {'FLASK_ENV': 'production'}):
+            with self.subTest(settings=settings):
+                client = self.make_app(settings).test_client()
+                with patch('backend.endpoints.llm.call_llm') as chat, \
+                        patch('backend.harness.llm_calls.chat') as registered:
+                    response = client.post('/llm/calls/freeform_narrator',
+                                           json={'input': 'Hello'})
+                    self.assertEqual(response.status_code, 401)
+                    response = client.post('/llm/chat', json={
+                        'prompt': 'Hello', 'response_format': {'type': 'object'}})
+                    self.assertEqual(response.status_code,
+                                     404 if settings else 401)
+                chat.assert_not_called()
+                registered.assert_not_called()
+
+    def test_registered_user_can_call_provider_in_production(self):
+        client = self.authenticated_client(self.make_app({'FLASK_ENV': 'production'}))
+        with patch('backend.harness.llm_calls.chat', return_value={
+                'provider': 'test', 'model': 'test', 'response': 'A story.'}) as call:
+            response = client.post('/llm/calls/freeform_narrator', json={'input': 'Hello'})
+        self.assertEqual(response.status_code, 200)
+        call.assert_called_once()
+
+    def test_revoked_deleted_and_logged_out_sessions_cannot_call_provider(self):
+        for invalidation in ('revoked', 'deleted', 'logged_out'):
+            with self.subTest(invalidation=invalidation):
+                app = self.make_app({'FLASK_ENV': 'production'})
+                client = self.authenticated_client(app)
+                if invalidation == 'logged_out':
+                    self.assertEqual(client.post('/auth/logout').status_code, 200)
+                else:
+                    with app.config['get_db']() as db:
+                        db.execute('UPDATE users SET auth_version = 1' if
+                                   invalidation == 'revoked' else 'DELETE FROM users')
+                with patch('backend.harness.llm_calls.chat') as call:
+                    response = client.post('/llm/calls/freeform_narrator',
+                                           json={'input': 'Hello'})
+                self.assertEqual(response.status_code, 401)
+                call.assert_not_called()
 
 
 if __name__ == '__main__':

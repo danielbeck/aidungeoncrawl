@@ -1,4 +1,4 @@
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, jsonify, request, session
 
 try:
     from backend.llm_calls import REGISTRY, LLMResponseError, MessageHistory
@@ -47,12 +47,18 @@ def disabled_in_production():
     return (current_app.config.get('llm_settings') or {}).get('FLASK_ENV') == 'production'
 
 
-@bp.route('/chat', methods=['POST'])
-def chat():
-    if disabled_in_production():
+@bp.before_request
+def require_authenticated_calls():
+    if request.endpoint == 'llm.chat' and disabled_in_production():
         # A free-form prompt with a client-supplied schema is a development
         # tool; exposing it in production turns the provider key into a proxy.
         return jsonify({'error': 'Not Found'}), 404
+    if request.method == 'POST' and not session.get('user_id'):
+        return jsonify({'error': 'Authentication is required to make LLM calls.'}), 401
+
+
+@bp.route('/chat', methods=['POST'])
+def chat():
     try:
         data = request.get_json()
     except Exception:

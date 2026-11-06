@@ -134,7 +134,9 @@ See `.env.example` for defaults. Prompts and response schemas live in
 - `POST /llm/chat` is served only outside production. Deployment writes
   `FLASK_ENV=production` into the private settings, which removes that free-form
   prompt endpoint (any prompt, client-supplied schema) from the deployed API.
-  The typed `POST /llm/calls/<name>` routes remain available.
+  The typed `POST /llm/calls/<name>` routes remain available only to authenticated
+  registered users. Development `/llm/chat` requests also require authentication.
+  These direct calls do not consume the gameplay turn quota.
 
 ## Troubleshooting
 

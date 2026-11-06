@@ -26,13 +26,13 @@ new email-based accounts. Account schema migrations are additive.
 
 | Control | Current behavior and boundary |
 |---|---|
-| Authentication and ownership | Gameplay requires a session and loads the authenticated user's saved game. |
+| Authentication and ownership | Gameplay and direct LLM calls require a valid registered-user session. Gameplay loads that user's saved game. |
 | SQL parameters | Account and gameplay queries use parameterized values. |
 | Input validation | Account fields and gameplay/LLM contracts are validated before use. |
 | Request size | Flask's request-body limit is 16 KiB. |
 | Rate limiting | Flask-Limiter applies IP-based defaults of 200/day and 50/hour with in-memory storage, which resets with each CGI process. |
 | Turn quota | Each account gets `USER_DAILY_TURN_QUOTA` gameplay turns per UTC day (default 200), counted in the SQLite `user_turn_usage` table. Exhausted accounts receive HTTP 429 before any provider call; the limit survives CGI processes and restarts. |
-| LLM surface | `POST /llm/chat` accepts any prompt and a client-supplied schema, so it is not served when loaded settings specify `FLASK_ENV=production`. |
+| LLM surface | All direct LLM calls require authentication; revoked or deleted account sessions are rejected. `POST /llm/chat` is additionally absent when loaded settings specify `FLASK_ENV=production`. Direct calls are outside the gameplay turn quota. `GET /llm/health` remains public and does not invoke the provider. |
 | CORS | Credentialed requests are restricted to configured origins, with localhost development defaults; see [runtime settings](CONFIG.md#other-runtime-settings). |
 | CSRF configuration | Flask-WTF is initialized, but `WTF_CSRF_CHECK_DEFAULT=False` disables automatic checks. Current endpoint modules do not explicitly invoke CSRF protection; do not describe CSRF enforcement as implemented. |
 
