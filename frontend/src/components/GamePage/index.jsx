@@ -30,7 +30,6 @@ function GamePage() {
   const [game, setGame] = useState(null)
   const [action, setAction] = useState('')
   const [mode, setMode] = useState('managed')
-  const [startingPoint, setStartingPoint] = useState('town')
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -164,7 +163,7 @@ function GamePage() {
     try {
       const data = await fetchAPI('/game/new', {
         method: 'POST', credentials: 'include',
-        body: JSON.stringify({ starting_point: startingPoint }),
+        body: JSON.stringify({ starting_point: 'town' }),
       })
       setGame(data.game)
       setMode(data.game.mode || 'managed')
@@ -221,13 +220,6 @@ function GamePage() {
           <h2>{location?.name || 'Unknown location'}</h2>
         </div>
         <form className={styles.newGameForm} onSubmit={startNewGame}>
-          <label htmlFor="starting-point">New adventure starting point</label>
-          <select id="starting-point" value={startingPoint}
-            onChange={event => setStartingPoint(event.target.value)} disabled={submitting}>
-            <option value="town">Town square outside the tavern</option>
-            <option value="wilderness">Wilderness exploration</option>
-            <option value="dungeon">Dungeon / lair entrance</option>
-          </select>
           <button className={styles.secondaryButton} type="submit" disabled={submitting}>
             New game
           </button>

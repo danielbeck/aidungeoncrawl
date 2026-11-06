@@ -83,7 +83,10 @@ All gameplay endpoints require an authenticated session.
 | `POST /game/stop` | End the adventure. |
 
 The starting point sets both the initial location and opening narration for all
-storytelling modes. An omitted body or field preserves the town-square default;
+storytelling modes. The UI always starts new adventures in the town square
+outside the tavern and does not show a starting-point selector. Alternative
+starting points remain available through the API.
+An omitted body or field preserves the town-square default;
 invalid starting points return HTTP 400 without replacing the saved adventure.
 
 Each account may start `USER_DAILY_TURN_QUOTA` turns per UTC day (default 200).
