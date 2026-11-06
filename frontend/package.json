@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "NODE_ENV=development npm run generate-config && npm-run-all --parallel vite backend",
     "vite": "vite",
-    "backend": "cd ../backend && python3 app.py",
+    "backend": "cd ../backend && if [ -x ../.venv/bin/python ]; then ../.venv/bin/python app.py; else python3 app.py; fi",
     "build": "vite build",
     "prebuild": "node generate-config.js",
     "predev": "node generate-config.js",

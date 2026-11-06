@@ -962,7 +962,7 @@ class GameEngineTests(unittest.TestCase):
             'destination': {'name': 'Forest Creature', 'description': 'A large creature.'},
             'clarification': clarification,
         }
-        with self.assertLogs(level='WARNING'):
+        with self.assertLogs('backend.llm_calls.gameplay', level='WARNING'):
             updated, result = process_turn(game, 'Follow him.', calls)
         self.assertEqual(updated['world'], game['world'])
         self.assertFalse(result['movement_outcome']['moved'])
@@ -1042,7 +1042,7 @@ class GameEngineTests(unittest.TestCase):
         calls['map'].data = movement_intent('there', 'reference')
         calls['movement_resolver'].data = {'destination': None, 'clarification': None}
         events = []
-        with self.assertLogs('backend', level='WARNING'):
+        with self.assertLogs('backend.llm_calls.gameplay', level='WARNING'):
             updated, result = process_turn(game, 'Go there.', calls, on_progress=events.append)
         self.assertEqual(updated['world'], game['world'])
         self.assertEqual(updated['currentLocationId'], game['currentLocationId'])

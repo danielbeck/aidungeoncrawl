@@ -52,10 +52,20 @@ echo ""
 stop_port 8000
 stop_port 3000
 
+# Prefer the project virtualenv, which holds the backend dependencies.
+PYTHON="${PYTHON:-}"
+if [ -z "$PYTHON" ]; then
+    if [ -x .venv/bin/python ]; then
+        PYTHON="$PWD/.venv/bin/python"
+    else
+        PYTHON=python3
+    fi
+fi
+
 # Start backend in background
 echo "🐍 Starting backend on http://127.0.0.1:8000"
 cd backend
-DEBUG=1 python3 app.py &
+DEBUG=1 "$PYTHON" app.py &
 BACKEND_PID=$!
 cd ..
 

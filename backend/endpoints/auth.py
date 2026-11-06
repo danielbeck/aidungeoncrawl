@@ -41,6 +41,14 @@ def validate_password(password):
         return False, 'Password must contain at least one number'
     return True, None
 
+def password_hash_method():
+    """Werkzeug 3 hashes with scrypt by default, which needs a hashlib built
+    with OpenSSL scrypt support; macOS system Python lacks it. Use PBKDF2 there
+    so registration and resets work. Stored hashes record their own method, so
+    existing accounts keep verifying either way."""
+    return 'scrypt' if hasattr(hashlib, 'scrypt') else 'pbkdf2:sha256'
+
+
 def read_data():
     try:
         data = request.get_json()
@@ -89,7 +97,7 @@ def register():
         with closing(get_db()) as db:
             cursor = db.execute(
                 'INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)',
-                (email, email, generate_password_hash(password))
+                (email, email, generate_password_hash(password, method=password_hash_method()))
             )
             db.commit()
             session.clear()
@@ -208,7 +216,7 @@ def reset_password():
         return jsonify({'error': 'Passwords do not match'}), 400
     token_hash = hashlib.sha256(token.encode('ascii')).hexdigest()
     try:
-        password_hash = generate_password_hash(password)
+        password_hash = generate_password_hash(password, method=password_hash_method())
         with closing(get_db()) as db:
             db.execute('BEGIN IMMEDIATE')
             reset = db.execute(

@@ -20,8 +20,9 @@ there is no fallback key.
 Install dependencies and initialize account storage:
 
 ```bash
-pip3 install -r backend/requirements.txt
-python3 backend/init_db.py
+python3 -m venv .venv
+.venv/bin/python -m pip install -r backend/requirements.txt
+.venv/bin/python backend/init_db.py
 npm --prefix frontend install
 ```
 
@@ -38,7 +39,7 @@ reserve those ports for this project. It refuses to start if a port remains
 occupied and stops its backend process on exit.
 
 Alternatively, `cd frontend && npm run dev` starts both through npm. For separate
-terminals, run `DEBUG=1 python3 backend/app.py` and
+terminals, run `DEBUG=1 .venv/bin/python backend/app.py` and
 `cd frontend && NODE_ENV=development npm run generate-config && npm run vite`.
 Do not run multiple startup methods at once.
 

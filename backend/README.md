@@ -153,19 +153,22 @@ requests. Its progress events carry `operation_id` and, for nested calls,
 
 ## Testing
 
-Run focused suites from the repository root as needed:
+Run focused suites from the repository root with the environment that has
+`backend/requirements.txt` installed (`python3 -m venv .venv` and
+`.venv/bin/python -m pip install -r backend/requirements.txt`):
 
 ```bash
-python3 -m unittest backend.test_account_backport backend.test_password_reset
-python3 -m unittest backend.test_game_engine backend.test_game_api backend.test_history_preparation
-python3 -m unittest backend.test_usage_limits
-python3 -m unittest backend.test_tool_mode backend.test_tool_provider
+.venv/bin/python -m unittest backend.test_account_backport backend.test_password_reset
+.venv/bin/python -m unittest backend.test_game_engine backend.test_game_api backend.test_history_preparation
+.venv/bin/python -m unittest backend.test_usage_limits backend.test_mode_state_sharing
+.venv/bin/python -m unittest backend.test_tool_mode backend.test_tool_provider backend.test_llm_calls
+.venv/bin/python -m unittest backend.test_freeform_mode backend.test_direct_mode
 ```
 
 Live movement checks are opt-in and call local Ollama:
 
 ```bash
-RUN_LIVE_MOVEMENT_TESTS=1 python3 -m unittest backend.test_movement_live
+RUN_LIVE_MOVEMENT_TESTS=1 .venv/bin/python -m unittest backend.test_movement_live
 ```
 
 For cookie, CORS, CSRF, and rate-limit boundaries, see
