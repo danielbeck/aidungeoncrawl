@@ -42,8 +42,17 @@ def parse_history(raw_history):
         raise ValueError(f'Invalid history: {error}') from error
 
 
+def disabled_in_production():
+    """Development-only routes are absent from the deployed API surface."""
+    return (current_app.config.get('llm_settings') or {}).get('FLASK_ENV') == 'production'
+
+
 @bp.route('/chat', methods=['POST'])
 def chat():
+    if disabled_in_production():
+        # A free-form prompt with a client-supplied schema is a development
+        # tool; exposing it in production turns the provider key into a proxy.
+        return jsonify({'error': 'Not Found'}), 404
     try:
         data = request.get_json()
     except Exception:

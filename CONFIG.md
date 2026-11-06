@@ -117,6 +117,12 @@ See `.env.example` for defaults. Prompts and response schemas live in
 
 ## Other runtime settings
 
+- `USER_DAILY_TURN_QUOTA` is the per-account daily gameplay turn allowance,
+  default 200. Counters live in SQLite, so the limit holds across CGI processes
+  and restarts, and reset at UTC midnight. Each accepted `/game/turn` request
+  counts once, including retried attempts after a provider failure; replaying a
+  completed `request_id` does not count again. Deployment transfers the value
+  into the private server configuration.
 - `DEBUG=1` enables Flask's local debug mode.
 - `DB_PATH` optionally overrides the backend SQLite path.
 - `ALLOWED_ORIGINS` is a comma-separated list read from the backend process
@@ -125,6 +131,10 @@ See `.env.example` for defaults. Prompts and response schemas live in
   into the private JSON file, and the CORS initialization does not read it from
   `.env`. Export it in the backend environment if needed. CORS is not an
   authentication or CSRF mechanism.
+- `POST /llm/chat` is served only outside production. Deployment writes
+  `FLASK_ENV=production` into the private settings, which removes that free-form
+  prompt endpoint (any prompt, client-supplied schema) from the deployed API.
+  The typed `POST /llm/calls/<name>` routes remain available.
 
 ## Troubleshooting
 

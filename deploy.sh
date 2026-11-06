@@ -90,7 +90,7 @@ trap cleanup EXIT
 
 echo "Installing private account configuration (secrets are not printed)..."
 if ! ACCOUNT_CONFIG=$(node -e '
-    const keys = ["SECRET_KEY", "SMTP_HOST", "SMTP_PORT", "SMTP_SECURE", "SMTP_FROM_EMAIL", "SMTP_FROM_NAME", "SMTP_USERNAME", "SMTP_PASSWORD", "LLM_PROVIDER", "OLLAMA_URL", "OLLAMA_MODEL", "OPENROUTER_URL", "OPENROUTER_API_KEY", "OPENROUTER_MODEL", "PRODUCTION_DOMAIN", "DEPLOY_SUB_DIR"];
+    const keys = ["SECRET_KEY", "SMTP_HOST", "SMTP_PORT", "SMTP_SECURE", "SMTP_FROM_EMAIL", "SMTP_FROM_NAME", "SMTP_USERNAME", "SMTP_PASSWORD", "LLM_PROVIDER", "OLLAMA_URL", "OLLAMA_MODEL", "OPENROUTER_URL", "OPENROUTER_API_KEY", "OPENROUTER_MODEL", "PRODUCTION_DOMAIN", "DEPLOY_SUB_DIR", "USER_DAILY_TURN_QUOTA"];
     const settings = Object.fromEntries(keys.map(key => [key, process.env[key]]));
     // LLM_PROVIDER usually targets local Ollama; production needs its own provider.
     settings.LLM_PROVIDER = process.env.PRODUCTION_LLM_PROVIDER || "openrouter";

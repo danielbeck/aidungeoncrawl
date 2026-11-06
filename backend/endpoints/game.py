@@ -4,6 +4,7 @@ import queue
 import sqlite3
 import threading
 import uuid
+from datetime import datetime, timezone
 
 from flask import Blueprint, Response, current_app, jsonify, request, session
 
@@ -25,6 +26,7 @@ except ImportError:
 
 bp = Blueprint('game', __name__, url_prefix='/game')
 MODES = ('managed', 'direct', 'freeform', 'tool_using')
+DEFAULT_DAILY_TURN_QUOTA = 200
 
 
 def _stream_event(event):
@@ -93,6 +95,51 @@ def _ensure_schema(conn):
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         )
     ''')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS user_turn_usage (
+            user_id INTEGER NOT NULL,
+            day TEXT NOT NULL,
+            turns INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (user_id, day),
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    ''')
+
+
+def _daily_turn_quota():
+    """The per-account daily turn allowance, from settings or the default."""
+    raw = (current_app.config.get('llm_settings') or {}).get('USER_DAILY_TURN_QUOTA')
+    try:
+        quota = int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_DAILY_TURN_QUOTA
+    return quota if quota > 0 else DEFAULT_DAILY_TURN_QUOTA
+
+
+def _consume_turn(conn, user_id):
+    """Count one turn against today's durable per-account allowance.
+
+    The counter lives in SQLite so it survives CGI processes and restarts.
+    Attempts are counted when they start, because a turn that later fails has
+    still used provider capacity. Returns the remaining allowance, or None when
+    the allowance for today is already spent.
+    """
+    day = datetime.now(timezone.utc).strftime('%Y-%m-%d')
+    limit = _daily_turn_quota()
+    conn.execute('BEGIN IMMEDIATE')
+    row = conn.execute(
+        'SELECT turns FROM user_turn_usage WHERE user_id = ? AND day = ?', (user_id, day)
+    ).fetchone()
+    used = row['turns'] if row else 0
+    if used >= limit:
+        conn.rollback()
+        return None
+    conn.execute('''
+        INSERT INTO user_turn_usage (user_id, day, turns) VALUES (?, ?, 1)
+        ON CONFLICT(user_id, day) DO UPDATE SET turns = user_turn_usage.turns + 1
+    ''', (user_id, day))
+    conn.commit()
+    return limit - used - 1
 
 
 def _user_id():
@@ -313,6 +360,12 @@ def play_turn():
             return jsonify(json.loads(previous['response_json']))
         if original_state['status'] != 'active':
             return jsonify({'error': 'This game has ended. Start a new game to continue.'}), 409
+        remaining = _consume_turn(conn, user_id)
+        if remaining is None:
+            return jsonify({
+                'error': f'You have reached the daily limit of {_daily_turn_quota()} game turns. '
+                         'Your adventure is saved; you can continue tomorrow.',
+            }), 429
     finally:
         conn.close()
 

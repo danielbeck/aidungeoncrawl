@@ -86,6 +86,12 @@ The starting point sets both the initial location and opening narration for all
 storytelling modes. An omitted body or field preserves the town-square default;
 invalid starting points return HTTP 400 without replacing the saved adventure.
 
+Each account may start `USER_DAILY_TURN_QUOTA` turns per UTC day (default 200).
+The counter lives in SQLite and is checked before any provider call, so the
+limit holds across CGI processes; an exhausted account receives HTTP 429 and
+keeps its saved adventure. Replaying a completed `request_id` is served from the
+stored response and does not consume another turn.
+
 ```bash
 curl -b cookies.txt -c cookies.txt http://localhost:8000/game/
 curl -b cookies.txt -c cookies.txt -X POST http://localhost:8000/game/turn \
@@ -152,6 +158,7 @@ Run focused suites from the repository root as needed:
 ```bash
 python3 -m unittest backend.test_account_backport backend.test_password_reset
 python3 -m unittest backend.test_game_engine backend.test_game_api backend.test_history_preparation
+python3 -m unittest backend.test_usage_limits
 python3 -m unittest backend.test_tool_mode backend.test_tool_provider
 ```
 

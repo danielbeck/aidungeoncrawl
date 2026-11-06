@@ -30,13 +30,18 @@ new email-based accounts. Account schema migrations are additive.
 | SQL parameters | Account and gameplay queries use parameterized values. |
 | Input validation | Account fields and gameplay/LLM contracts are validated before use. |
 | Request size | Flask's request-body limit is 16 KiB. |
-| Rate limiting | Flask-Limiter applies IP-based defaults of 200/day and 50/hour with in-memory storage. |
+| Rate limiting | Flask-Limiter applies IP-based defaults of 200/day and 50/hour with in-memory storage, which resets with each CGI process. |
+| Turn quota | Each account gets `USER_DAILY_TURN_QUOTA` gameplay turns per UTC day (default 200), counted in the SQLite `user_turn_usage` table. Exhausted accounts receive HTTP 429 before any provider call; the limit survives CGI processes and restarts. |
+| LLM surface | `POST /llm/chat` accepts any prompt and a client-supplied schema, so it is not served when loaded settings specify `FLASK_ENV=production`. |
 | CORS | Credentialed requests are restricted to configured origins, with localhost development defaults; see [runtime settings](CONFIG.md#other-runtime-settings). |
 | CSRF configuration | Flask-WTF is initialized, but `WTF_CSRF_CHECK_DEFAULT=False` disables automatic checks. Current endpoint modules do not explicitly invoke CSRF protection; do not describe CSRF enforcement as implemented. |
 
 In-memory rate limits are process-local, not durable or shared between workers
 or CGI requests. A shared backend such as Redis requires an explicit application
-configuration change. CORS and `SameSite` cookies do not replace CSRF validation.
+configuration change. The per-account turn quota, not the IP limiter, is the
+durable control on gameplay spend; attempts are counted when a turn starts, so a
+provider failure still consumes one turn. CORS and `SameSite` cookies do not
+replace CSRF validation.
 
 ## Response headers
 
