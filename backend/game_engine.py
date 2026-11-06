@@ -187,6 +187,36 @@ def _run_logged(name, call, context):
     return result
 
 
+def current_summary(state, summarizer, progress):
+    """The continuity summary covering every completed event.
+
+    Reuses the saved summary while it is current and otherwise regenerates it
+    from the literal history. Callers pass this to models instead of the
+    transcript, so prompt size follows the story's substance rather than its
+    length.
+    """
+    history = state['history']
+    completed = [{'kind': event['kind'], 'content': event['content']}
+                 for event in history.get('recentEvents', [])]
+    if history.get('summary') and history.get('summaryEventCount') == len(completed):
+        return HistorySummarizerCall.validate_response(
+            {'summary': history['summary']})['summary']
+    if len(completed) <= 1:
+        return ''
+    request = {'completed_history': copy.deepcopy(completed)}
+    progress('summarizer', 'started', request=request)
+    try:
+        result = _run_logged('summarizer', summarizer, request)
+        summary = HistorySummarizerCall.validate_response(result.data)['summary']
+    except LLMError as error:
+        progress('summarizer', 'failed', error=str(error),
+                 response=getattr(error, 'details', None))
+        raise
+    progress('summarizer', 'completed', response={'summary': summary},
+             provider=result.provider, model=result.model)
+    return summary
+
+
 def _resolve_entity(state, collection_name, proposed, comparator, current_location_id,
                     create_if_missing=True, on_progress=None, candidates=None):
     entities = state['world'][collection_name]
@@ -671,29 +701,7 @@ def process_turn(state, action, calls=None, settings=None, on_progress=None):
         if on_progress is not None:
             on_progress({'component': component, 'status': status, **details})
 
-    def summarize(history):
-        request = {'completed_history': copy.deepcopy(history)}
-        progress('summarizer', 'started', request=request)
-        try:
-            result = _run_logged('summarizer', calls['summarizer'], request)
-            summary = HistorySummarizerCall.validate_response(result.data)['summary']
-        except LLMError as error:
-            progress('summarizer', 'failed', error=str(error),
-                     response=getattr(error, 'details', None))
-            raise
-        progress('summarizer', 'completed', response={'summary': summary},
-                 provider=result.provider, model=result.model)
-        return summary
-
-    history = state['history']
-    if ('summary' in history
-            and history.get('summaryEventCount') == len(completed_history)):
-        historical_summary = HistorySummarizerCall.validate_response(
-            {'summary': history['summary']})['summary']
-    elif len(completed_history) > 1:
-        historical_summary = summarize(completed_history)
-    else:
-        historical_summary = ''
+    historical_summary = current_summary(state, calls['summarizer'], progress)
     manager_turn_context = {
         'current_action': action,
         'historical_summary': historical_summary,

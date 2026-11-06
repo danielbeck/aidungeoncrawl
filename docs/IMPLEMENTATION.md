@@ -29,9 +29,10 @@ game revision so an older in-flight turn cannot overwrite the selection.
 New games reset to Managed.
 
 The mode switch can select `freeform` for any turn. It makes one plain-text
-`freeform_narrator` call with the full literal transcript as conversation messages
-and the current action. No world state or summary is sent, and no manager,
-comparator, or summarizer is called. The response is appended to the transcript;
+`freeform_narrator` call with the current action and the continuity summary as
+background. No tracked world state is sent, and no manager or comparator is
+called; a missing or stale summary is regenerated before the call. The response
+is appended to the transcript;
 tracked locations, items, NPCs, objects, exits, movement history, and game-over
 status are left untouched. The sidebar still shows the last tracked state and
 may be stale. Switching back does not reconstruct missed world changes.
@@ -47,10 +48,11 @@ explicit error; incomplete JSON is never repaired or stored as a successful summ
 `tool_using`, labeled **Tool using**, runs a game master conversation with native
 Ollama/OpenRouter function tools. The prompt and tool schemas live in
 `shared/llm/game_master.md` and `shared/llm/game_master.tools.json`.
-The engine supplies the full literal history as conversation messages, player
-action, current location, local available items (including those held by present
-NPCs), present active NPCs, carried inventory, and known location IDs. A current
-prepared historical summary is also supplied when available.
+The engine supplies the current continuity summary as historical background,
+the player action, current location, local available items (including those held
+by present NPCs), present active NPCs, carried inventory, and known location IDs.
+The literal transcript is not replayed to the model; a missing or stale summary
+is regenerated before the first game-master request.
 
 The game master interprets intent and contextual plausibility, choosing zero or
 more tools before returning plain-text story. It must not narrate unperformed

@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 
 from backend.game_engine import new_game
 from backend.harness.llm_provider import LLMError
+from backend.llm_calls.gameplay import HistorySummarizerCall
 from backend.tool_mode import GameMasterCall, WorldTools, process_tool_turn, scene
 
 
@@ -171,7 +172,46 @@ class ToolModeTests(unittest.TestCase):
         self.assertEqual(context['player_action'], 'Take a key.')
         self.assertIn('items_here', context)
         self.assertIn('npcs_here', context)
-        self.assertEqual(requests[0][1]['content'], original['history']['recentEvents'][0]['content'])
+        self.assertEqual([message['role'] for message in requests[0]], ['system', 'user'])
+        self.assertEqual(json.loads(requests[0][1]['content'])['historical_summary'], '')
+        self.assertNotIn(original['history']['recentEvents'][0]['content'],
+                         json.dumps(requests[0]))
+
+    def test_current_summary_replaces_the_literal_transcript(self):
+        self.state['history']['recentEvents'].extend([
+            {'kind': 'player_action', 'content': 'Look around.'},
+            {'kind': 'narration', 'content': 'Dust and silence.'},
+        ])
+        self.state['history']['summary'] = 'Earlier: the player entered the square.'
+        self.state['history']['summaryEventCount'] = 3
+        self.master.transport.return_value = reply('You wait.')
+        with patch('backend.llm_calls.gameplay.HistorySummarizerCall.run',
+                   side_effect=AssertionError('A current summary must be reused')):
+            process_tool_turn(self.state, 'Wait.', call=self.master,
+                              summarizer=HistorySummarizerCall(transport=Mock()))
+        messages = self.master.transport.call_args[0][0]
+        self.assertEqual([messages[0]['role'], messages[1]['role']], ['system', 'user'])
+        self.assertEqual(json.loads(messages[1]['content'])['historical_summary'],
+                         'Earlier: the player entered the square.')
+        self.assertNotIn('Dust and silence.', json.dumps(messages))
+
+    def test_stale_summary_is_regenerated_before_the_first_request(self):
+        self.state['history']['recentEvents'].extend([
+            {'kind': 'player_action', 'content': 'Look around.'},
+            {'kind': 'narration', 'content': 'Dust and silence.'},
+        ])
+        self.state['history']['summary'] = 'Earlier: the player entered the square.'
+        self.state['history']['summaryEventCount'] = 1
+        self.master.transport.return_value = reply('You wait.')
+        summarizer = HistorySummarizerCall(transport=Mock(return_value={
+            'provider': 'fake', 'model': 'fake',
+            'response': json.dumps({'summary': 'The player looked around the square.'})}))
+        process_tool_turn(self.state, 'Wait.', call=self.master, summarizer=summarizer)
+        messages = self.master.transport.call_args[0][0]
+        self.assertEqual([messages[0]['role'], messages[1]['role']], ['system', 'user'])
+        self.assertEqual(json.loads(messages[1]['content'])['historical_summary'],
+                         'The player looked around the square.')
+        self.assertNotIn('Dust and silence.', json.dumps(messages))
 
     def test_tool_rejection_is_visible_to_game_master(self):
         self.master.transport.side_effect = [

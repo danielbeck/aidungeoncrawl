@@ -1,4 +1,5 @@
 import copy
+import json
 import unittest
 from unittest.mock import Mock
 
@@ -28,10 +29,12 @@ class FreeformModeTests(unittest.TestCase):
         messages, schema, name = transport.call_args[0]
         self.assertIsNone(schema)
         self.assertEqual(name, 'freeform_narrator')
-        self.assertEqual(messages[1:], [
-            {'role': 'assistant', 'content': state['history']['recentEvents'][0]['content']},
-            {'role': 'user', 'content': 'Enter the tavern.'},
-        ])
+        self.assertEqual([message['role'] for message in messages], ['system', 'user'])
+        payload = json.loads(messages[1]['content'])
+        self.assertEqual(payload['current_action'], 'Enter the tavern.')
+        self.assertEqual(payload['historical_summary'], 'Old summary')
+        self.assertNotIn(state['history']['recentEvents'][0]['content'],
+                         json.dumps(messages))
         self.assertEqual(state, original)
         expected = copy.deepcopy(original)
         expected['history']['recentEvents'].extend([

@@ -9,15 +9,19 @@ import json
 import logging
 
 try:
-    from backend.game_engine import InvalidTurnResponse, _context, _required_string
+    from backend.game_engine import (
+        InvalidTurnResponse, _context, _required_string, current_summary,
+    )
     from backend.harness.llm_calls import LLMResponseError
     from backend.harness.llm_provider import LLMError
-    from backend.llm_calls.gameplay import DirectNarratorCall
+    from backend.llm_calls.gameplay import DirectNarratorCall, HistorySummarizerCall
 except ImportError:
-    from game_engine import InvalidTurnResponse, _context, _required_string
+    from game_engine import (
+        InvalidTurnResponse, _context, _required_string, current_summary,
+    )
     from harness.llm_calls import LLMResponseError
     from harness.llm_provider import LLMError
-    from llm_calls.gameplay import DirectNarratorCall
+    from llm_calls.gameplay import DirectNarratorCall, HistorySummarizerCall
 
 
 logger = logging.getLogger(__name__)
@@ -152,19 +156,24 @@ def _apply(state, data):
     return warnings
 
 
-def process_direct_turn(state, action, settings=None, on_progress=None, call=None):
+def process_direct_turn(state, action, settings=None, on_progress=None, call=None,
+                        summarizer=None):
     """Resolve a turn with a single narrator call that owns all state changes."""
     action = _required_string(action, 'action', 2000)
     call = call or DirectNarratorCall(settings=settings)
+    summarizer = summarizer or HistorySummarizerCall(settings=settings)
 
     def progress(status, **details):
         if on_progress is not None:
             on_progress({'component': COMPONENT, 'status': status, **details})
 
+    def summary_progress(component, status, **details):
+        if on_progress is not None:
+            on_progress({'component': component, 'status': status, **details})
+
     request = {
         'current_action': action,
-        'history': [{'kind': event['kind'], 'content': event['content']}
-                    for event in state['history'].get('recentEvents', [])],
+        'historical_summary': current_summary(state, summarizer, summary_progress),
         'player_id': state['playerId'],
         'state': _project(state),
     }

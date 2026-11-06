@@ -146,7 +146,8 @@ function GamePage() {
           movement_outcome: data.turn.movement_outcome,
         },
       })))
-      if (mode === 'managed' || mode === 'tool_using') void prepareHistory(data.game.id, revision)
+      // Every mode narrates from the continuity summary, so keep it prepared.
+      void prepareHistory(data.game.id, revision)
     } catch (err) {
       setError(err.message)
       setProgress(events => finishProgress(events, err.message))

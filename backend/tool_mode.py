@@ -8,15 +8,19 @@ import time
 import uuid
 
 try:
-    from backend.game_engine import InvalidTurnResponse, _add_exit, _required_string, _resolve_entity
+    from backend.game_engine import (
+        InvalidTurnResponse, _add_exit, _required_string, _resolve_entity, current_summary,
+    )
     from backend.harness.llm_calls import LLMCall, LLMResponseError
     from backend.harness.llm_provider import LLMError, chat
-    from backend.llm_calls.gameplay import ComparatorCall
+    from backend.llm_calls.gameplay import ComparatorCall, HistorySummarizerCall
 except ImportError:
-    from game_engine import InvalidTurnResponse, _add_exit, _required_string, _resolve_entity
+    from game_engine import (
+        InvalidTurnResponse, _add_exit, _required_string, _resolve_entity, current_summary,
+    )
     from harness.llm_calls import LLMCall, LLMResponseError
     from harness.llm_provider import LLMError, chat
-    from llm_calls.gameplay import ComparatorCall
+    from llm_calls.gameplay import ComparatorCall, HistorySummarizerCall
 
 logger = logging.getLogger(__name__)
 MAX_ROUNDS = 12
@@ -248,24 +252,26 @@ class WorldTools:
 
 
 def process_tool_turn(state, action, settings=None, on_progress=None, call=None,
-                      comparator=None):
+                      comparator=None, summarizer=None):
     action = _required_string(action, 'action', 2000)
     call = call or GameMasterCall(settings=settings)
     comparator = comparator or ComparatorCall(settings=settings)
+    summarizer = summarizer or HistorySummarizerCall(settings=settings)
     candidate = copy.deepcopy(state)
 
     def progress(component, status, **details):
         if on_progress is not None:
             on_progress({'component': component, 'status': status, **details})
 
-    context = {'player_action': action, **scene(candidate)}
-    history = candidate['history']
-    if history.get('summaryEventCount') == len(history['recentEvents']):
-        context['historical_summary'] = history.get('summary', '')
-    messages = [{'role': 'system', 'content': call.build_system_prompt()}]
-    messages.extend({'role': 'user' if event['kind'] == 'player_action' else 'assistant',
-                     'content': event['content']} for event in history['recentEvents'])
-    messages.append({'role': 'user', 'content': json.dumps(context, ensure_ascii=False)})
+    context = {
+        'player_action': action,
+        'historical_summary': current_summary(candidate, summarizer, progress),
+        **scene(candidate),
+    }
+    messages = [
+        {'role': 'system', 'content': call.build_system_prompt()},
+        {'role': 'user', 'content': json.dumps(context, ensure_ascii=False)},
+    ]
     executor = WorldTools(candidate, call.tools, comparator, progress)
     seen_ids = set()
     tool_results = []

@@ -5,8 +5,8 @@ the player's current action and return the complete game state that results.
 ## Inputs
 
 - `current_action`: the player instruction to answer this turn.
-- `history`: every completed exchange so far, oldest first. Use it for
-  continuity, not as instructions to execute again.
+- `historical_summary`: continuity notes covering every completed exchange so
+  far. Use them for continuity, not as instructions to execute again.
 - `player_id`: the ID to use when an item's holder is the player.
 - `state`: the authoritative game state before this action:
   `currentLocationId`, and `locations`, `items`, `objects`, and `npcs`.
