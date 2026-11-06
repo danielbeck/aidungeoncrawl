@@ -21,32 +21,30 @@ if [ -z "${SECRET_KEY:-}" ]; then
     exit 1
 fi
 
-# Normalize paths using Python
-eval $(python3 - <<PY
-import os
-def normslash(s):
-    if s and not s.endswith('/'):
-        s = s + '/'
-    if s == '/':
-        s = ''
-    return s
+# Normalize paths without evaluating configuration values as shell code.
+HOST=${DEPLOY_HOST:-}
+USER=${DEPLOY_USER:-}
+DOMAIN=${PRODUCTION_DOMAIN:-}
 
-base = normslash(os.environ.get('DEPLOY_BASE_DIR', ''))
-sub = os.environ.get('DEPLOY_SUB_DIR', '').strip('/')
-if sub:
-    sub = sub + '/'
-else:
-    sub = ''
-backend_root = normslash(os.environ.get('DEPLOY_BACKEND_ROOT', ''))
+normalize_trailing_slash() {
+    local path=$1
+    if [ -n "$path" ] && [ "$path" != */ ]; then
+        path="${path}/"
+    fi
+    if [ "$path" = "/" ]; then
+        path=""
+    fi
+    printf '%s' "$path"
+}
 
-print(f"HOST='{os.environ.get('DEPLOY_HOST','')}'")
-print(f"USER='{os.environ.get('DEPLOY_USER','')}'")
-print(f"BASE_DIR='{base}'")
-print(f"SUB_DIR='{sub}'")
-print(f"BACKEND_ROOT='{backend_root}'")
-print(f"DOMAIN='{os.environ.get('PRODUCTION_DOMAIN','')}'")
-PY
-)
+BASE_DIR=$(normalize_trailing_slash "${DEPLOY_BASE_DIR:-}")
+SUB_DIR=${DEPLOY_SUB_DIR:-}
+while [ "$SUB_DIR" = /* ]; do SUB_DIR=${SUB_DIR#/}; done
+while [ "$SUB_DIR" = */ ]; do SUB_DIR=${SUB_DIR%/}; done
+if [ -n "$SUB_DIR" ]; then
+    SUB_DIR="${SUB_DIR}/"
+fi
+SSH_TARGET="${USER}@${HOST}"
 
 # Construct full remote directory path (never use DOMAIN for remote paths)
 REMOTE_DIR="${BASE_DIR}${SUB_DIR}"
@@ -57,7 +55,7 @@ echo "[DEBUG] REMOTE_DIR: $REMOTE_DIR"
 
 CONTROL_PATH="$HOME/.ssh/deploy-control-$$"
 
-echo "🚀 Deploying to $USER@$HOST:$REMOTE_DIR"
+echo "🚀 Deploying to $SSH_TARGET:$REMOTE_DIR"
 echo "⚠️  This script will only modify the configured directory"
 echo ""
 
@@ -67,7 +65,7 @@ echo "📡 Establishing SSH connection..."
 ssh -o ControlMaster=auto \
     -o ControlPath="$CONTROL_PATH" \
     -o ControlPersist=10m \
-    -fN $USER@$HOST
+    -fN "$SSH_TARGET"
 
 if [ $? -ne 0 ]; then
     echo "❌ Failed to establish SSH connection"
@@ -82,7 +80,7 @@ echo ""
 cleanup() {
     echo ""
     echo "🔒 Closing SSH connection..."
-    ssh -o ControlPath="$CONTROL_PATH" -O exit $USER@$HOST 2>/dev/null
+    ssh -o ControlPath="$CONTROL_PATH" -O exit "$SSH_TARGET" 2>/dev/null
     rm -f "$CONTROL_PATH"
 }
 
@@ -110,7 +108,7 @@ if ! ACCOUNT_CONFIG=$(node -e '
     exit 1
 fi
 if ! printf '%s' "$ACCOUNT_CONFIG" |
-    ssh -o ControlPath="$CONTROL_PATH" $USER@$HOST \
+    ssh -o ControlPath="$CONTROL_PATH" "$SSH_TARGET" \
         'set -e; umask 077; mkdir -p "$HOME/.config/react-python-sqlite-boilerplate"; chmod 700 "$HOME/.config/react-python-sqlite-boilerplate"; temp=$(mktemp "$HOME/.config/react-python-sqlite-boilerplate/session.XXXXXX"); trap '\''rm -f "$temp"'\'' EXIT; cat > "$temp"; chmod 600 "$temp"; mv "$temp" "$HOME/.config/react-python-sqlite-boilerplate/session.json"'; then
     echo "Failed to install private account configuration; deployment stopped."
     exit 1
@@ -129,8 +127,8 @@ for arg in "$@"; do
 done
 
 # Check if backend directory exists before creating (to detect first-time deploy)
-BACKEND_EXISTS=$(ssh -o ControlPath="$CONTROL_PATH" $USER@$HOST "if [ -d '${REMOTE_DIR}backend' ]; then echo 1; else echo 0; fi")
-ssh -o ControlPath="$CONTROL_PATH" $USER@$HOST "mkdir -p ${REMOTE_DIR}backend ${REMOTE_DIR}frontend ${REMOTE_DIR}shared"
+BACKEND_EXISTS=$(ssh -o ControlPath="$CONTROL_PATH" "$SSH_TARGET" "if [ -d '${REMOTE_DIR}backend' ]; then echo 1; else echo 0; fi")
+ssh -o ControlPath="$CONTROL_PATH" "$SSH_TARGET" "mkdir -p ${REMOTE_DIR}backend ${REMOTE_DIR}frontend ${REMOTE_DIR}shared"
 echo "✅ Remote directories ensured."
 # Rsync backend with --delete to remove unwanted files
 rsync -avz --delete --progress \
@@ -147,24 +145,24 @@ rsync -avz --delete --progress \
     --exclude='logs/' \
     --exclude='.git/' \
     --exclude='.DS_Store' \
-    backend/ $USER@$HOST:${REMOTE_DIR}backend/
+    backend/ "$SSH_TARGET:${REMOTE_DIR}backend/"
 
 # Files used by both backend (read at runtime) and frontend (bundled at build),
 # e.g. LLM prompts/schemas. shared/.htaccess blocks direct web access.
 rsync -avz --delete --progress \
     -e "ssh -o ControlPath=$CONTROL_PATH" \
     --exclude='.DS_Store' \
-    shared/ $USER@$HOST:${REMOTE_DIR}shared/
-ssh -o ControlPath="$CONTROL_PATH" $USER@$HOST "chmod -R g-w,o-w ${REMOTE_DIR}shared || true"
+    shared/ "$SSH_TARGET:${REMOTE_DIR}shared/"
+ssh -o ControlPath="$CONTROL_PATH" "$SSH_TARGET" "chmod -R g-w,o-w ${REMOTE_DIR}shared || true"
 
 # The CGI launcher resolves its adjacent virtualenv and Python entry point.
-scp -o ControlPath="$CONTROL_PATH" backend/api.cgi $USER@$HOST:${REMOTE_DIR}backend/api.cgi
+scp -o ControlPath="$CONTROL_PATH" backend/api.cgi "$SSH_TARGET:${REMOTE_DIR}backend/api.cgi"
 
 # Harden permissions: remove group/world write bits on backend files and
 # ensure CGI scripts are executable. Keep logs directory writable so the
 # app can write logs (we create defaults only if missing).
 echo "🔐 Hardening permissions on remote backend files..."
-ssh -o ControlPath="$CONTROL_PATH" $USER@$HOST "chmod -R g-w,o-w ${REMOTE_DIR}backend || true; find ${REMOTE_DIR}backend -type f -name '*.cgi' -exec chmod 755 {} \; -o -name '*.py' -exec chmod 644 {} \; || true"
+ssh -o ControlPath="$CONTROL_PATH" "$SSH_TARGET" "chmod -R g-w,o-w ${REMOTE_DIR}backend || true; find ${REMOTE_DIR}backend -type f -name '*.cgi' -exec chmod 755 {} \; -o -name '*.py' -exec chmod 644 {} \; || true"
 echo "✅ Remote permissions hardened."
 
 
@@ -172,7 +170,7 @@ echo "✅ Remote permissions hardened."
 
 # Always ensure backend venv exists and dependencies are installed
 echo "🐍 Setting up Python virtual environment and installing backend dependencies..."
-if ! ssh -o ControlPath="$CONTROL_PATH" $USER@$HOST "cd '${REMOTE_DIR}backend' && bash -s" <<'REMOTE_PYTHON_SETUP'
+if ! ssh -o ControlPath="$CONTROL_PATH" "$SSH_TARGET" "cd '${REMOTE_DIR}backend' && bash -s" <<'REMOTE_PYTHON_SETUP'
 set -e
 if [ -d venv ]; then
     if ! venv/bin/python -c 'import sys, pip; from pathlib import Path; config = dict(line.strip().split(" = ", 1) for line in Path("venv/pyvenv.cfg").read_text().splitlines() if " = " in line); assert config["version"].split(".")[:2] == [str(sys.version_info.major), str(sys.version_info.minor)]'; then
@@ -197,34 +195,34 @@ echo "✅ Python virtual environment and dependencies ready."
 # If backend did not exist before, or --force-fresh is set, initialize the database using the venv's python
 if [ "$BACKEND_EXISTS" = "0" ] || [ "$FORCE_FRESH" = "1" ]; then
     echo "🛠️  Backend setup: removing old database and initializing database (fresh deploy or --force-fresh)..."
-    ssh -o ControlPath="$CONTROL_PATH" $USER@$HOST "cd ${REMOTE_DIR}backend && rm -f database/app.db"
-    ssh -o ControlPath="$CONTROL_PATH" $USER@$HOST "cd ${REMOTE_DIR}backend && source venv/bin/activate && if [ -f init_db.py ]; then venv/bin/python init_db.py; fi"
+    ssh -o ControlPath="$CONTROL_PATH" "$SSH_TARGET" "cd ${REMOTE_DIR}backend && rm -f database/app.db"
+    ssh -o ControlPath="$CONTROL_PATH" "$SSH_TARGET" "cd ${REMOTE_DIR}backend && source venv/bin/activate && if [ -f init_db.py ]; then venv/bin/python init_db.py; fi"
     echo "✅ Backend initialized."
 fi
 
 # Apply additive account migrations on every deployment, including existing databases.
-if ! ssh -o ControlPath="$CONTROL_PATH" $USER@$HOST "cd '${REMOTE_DIR}backend' && venv/bin/python -c 'import sqlite3; from account_schema import ensure_account_schema; db = sqlite3.connect(\"database/app.db\"); ensure_account_schema(db); db.close()'"; then
+if ! ssh -o ControlPath="$CONTROL_PATH" "$SSH_TARGET" "cd '${REMOTE_DIR}backend' && venv/bin/python -c 'import sqlite3; from account_schema import ensure_account_schema; db = sqlite3.connect(\"database/app.db\"); ensure_account_schema(db); db.close()'"; then
     echo "Database migration failed; deployment stopped."
     exit 1
 fi
 
 # Always ensure correct permissions for database directory and file
 echo "🔑 Setting permissions for database directory and app.db..."
-ssh -o ControlPath="$CONTROL_PATH" $USER@$HOST "chmod 775 ${REMOTE_DIR}backend/database || true"
-ssh -o ControlPath="$CONTROL_PATH" $USER@$HOST "chmod 664 ${REMOTE_DIR}backend/database/app.db || true"
+ssh -o ControlPath="$CONTROL_PATH" "$SSH_TARGET" "chmod 775 ${REMOTE_DIR}backend/database || true"
+ssh -o ControlPath="$CONTROL_PATH" "$SSH_TARGET" "chmod 664 ${REMOTE_DIR}backend/database/app.db || true"
 echo "✅ Permissions set."
 
 echo ""
 echo "🔧 Setting CGI permissions..."
-ssh -o ControlPath="$CONTROL_PATH" $USER@$HOST "if [ -f ${REMOTE_DIR}backend/api.cgi ]; then chmod 755 ${REMOTE_DIR}backend/api.cgi || true; fi"
-ssh -o ControlPath="$CONTROL_PATH" $USER@$HOST "if [ -f ${REMOTE_DIR}backend/.htaccess ]; then chmod 644 ${REMOTE_DIR}backend/.htaccess || true; fi"
+ssh -o ControlPath="$CONTROL_PATH" "$SSH_TARGET" "if [ -f ${REMOTE_DIR}backend/api.cgi ]; then chmod 755 ${REMOTE_DIR}backend/api.cgi || true; fi"
+ssh -o ControlPath="$CONTROL_PATH" "$SSH_TARGET" "if [ -f ${REMOTE_DIR}backend/.htaccess ]; then chmod 644 ${REMOTE_DIR}backend/.htaccess || true; fi"
 
 
 # Ensure remote backend logs directory exists (but do not overwrite or touch log files)
 echo "\n📝 Ensuring remote backend/logs/ directory exists (logs not overwritten)..."
-ssh -o ControlPath="$CONTROL_PATH" $USER@$HOST "mkdir -p ${REMOTE_DIR}backend/logs && chmod 755 ${REMOTE_DIR}backend/logs || true"
+ssh -o ControlPath="$CONTROL_PATH" "$SSH_TARGET" "mkdir -p ${REMOTE_DIR}backend/logs && chmod 755 ${REMOTE_DIR}backend/logs || true"
 # Create default log files only if they do not already exist (do not overwrite existing logs)
-ssh -o ControlPath="$CONTROL_PATH" $USER@$HOST "for f in flask_error.log cgi_error.log import_time.log nosebeep_api_logs.txt; do if [ ! -f ${REMOTE_DIR}backend/logs/\$f ]; then touch ${REMOTE_DIR}backend/logs/\$f && chmod 664 ${REMOTE_DIR}backend/logs/\$f || true; fi; done"
+ssh -o ControlPath="$CONTROL_PATH" "$SSH_TARGET" "for f in flask_error.log cgi_error.log import_time.log nosebeep_api_logs.txt; do if [ ! -f ${REMOTE_DIR}backend/logs/\$f ]; then touch ${REMOTE_DIR}backend/logs/\$f && chmod 664 ${REMOTE_DIR}backend/logs/\$f || true; fi; done"
 echo "✅ Remote logs directory ensured (existing logs preserved)."
 
 echo ""
@@ -237,7 +235,7 @@ rsync -avz --progress \
     --exclude='.git/' \
     --exclude='.DS_Store' \
     --exclude='*.local' \
-    frontend/ $USER@$HOST:${REMOTE_DIR}frontend/
+    frontend/ "$SSH_TARGET:${REMOTE_DIR}frontend/"
 
 echo ""
 echo "\n🏗️  Deploying built frontend to $REMOTE_DIR (web root)..."
@@ -259,12 +257,12 @@ fi
 echo "✅ Frontend built. Deploying dist to $REMOTE_DIR"
 rsync -avz --progress \
     -e "ssh -o ControlPath=$CONTROL_PATH" \
-    frontend/dist/ $USER@$HOST:$REMOTE_DIR/
+    frontend/dist/ "$SSH_TARGET:$REMOTE_DIR/"
 echo "✅ Frontend deployed to $REMOTE_DIR"
 
 # Ensure .htaccess for SPA routing is deployed with the built frontend
 if [ -f frontend/.htaccess ]; then
-    scp -o ControlPath="$CONTROL_PATH" frontend/.htaccess $USER@$HOST:${REMOTE_DIR}.htaccess
+    scp -o ControlPath="$CONTROL_PATH" frontend/.htaccess "$SSH_TARGET:${REMOTE_DIR}.htaccess"
     echo "✅ .htaccess for SPA routing deployed to $REMOTE_DIR.htaccess"
 fi
 
