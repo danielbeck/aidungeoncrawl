@@ -39,6 +39,8 @@ class ToolProviderTests(unittest.TestCase):
             self.assertEqual(result['message']['tool_calls'][0]['id'], 'call1')
             if provider == 'openrouter':
                 self.assertEqual(payload['provider'], {'require_parameters': True})
+                self.assertEqual(payload['tool_choice'], 'auto')
+                self.assertNotIn('parallel_tool_calls', payload)
             else:
                 self.assertEqual(payload['options']['num_ctx'], 16384)
                 self.assertEqual(payload['options']['num_predict'], 2048)

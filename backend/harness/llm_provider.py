@@ -190,7 +190,6 @@ def call_openrouter(messages, schema, schema_name, config, tools=None):
     if tools is not None:
         payload['tools'] = tools
         payload['tool_choice'] = 'auto'
-        payload['parallel_tool_calls'] = False
         payload['provider'] = {'require_parameters': True}
 
     data = _post_json(
