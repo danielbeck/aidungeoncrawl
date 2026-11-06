@@ -29,3 +29,7 @@ frontend/dist/
 
 # Sensitive configuration (use config.json.example as template)
 config.json
+
+# Generated
+config.js
+frontend/.htaccess
