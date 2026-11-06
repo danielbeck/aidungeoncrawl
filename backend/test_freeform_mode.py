@@ -10,6 +10,30 @@ from backend.llm_calls.gameplay import FreeformNarratorCall
 
 
 class FreeformModeTests(unittest.TestCase):
+    def test_first_turn_receives_opening_without_summarizer_call(self):
+        for start in ('town', 'wilderness', 'dungeon'):
+            with self.subTest(start=start):
+                state = new_game(1, start)
+                original = copy.deepcopy(state)
+                summarizer = Mock()
+                transport = Mock(return_value={
+                    'provider': 'fake', 'model': 'fake', 'response': 'You look around.',
+                })
+                updated, _ = process_freeform_turn(
+                    state, 'Look around.',
+                    call=FreeformNarratorCall(transport=transport),
+                    summarizer=summarizer)
+                transport.assert_called_once()
+                payload = json.loads(transport.call_args[0][0][1]['content'])
+                self.assertEqual(payload['current_action'], 'Look around.')
+                self.assertEqual(payload['historical_summary'],
+                                 original['history']['recentEvents'][0]['content'])
+                summarizer.run.assert_not_called()
+                self.assertEqual(state, original)
+                self.assertEqual(updated['world'], original['world'])
+                self.assertEqual(updated['history']['recentEvents'][:-2],
+                                 original['history']['recentEvents'])
+
     def test_one_plain_text_call_preserves_tracked_state(self):
         state = new_game(1)
         state['history']['summary'] = 'Old summary'

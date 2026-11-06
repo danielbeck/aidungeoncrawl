@@ -32,7 +32,8 @@ The mode switch can select `freeform` for any turn. It makes one plain-text
 `freeform_narrator` call with the current action and the continuity summary as
 background. No tracked world state is sent, and no manager or comparator is
 called; a missing or stale summary is regenerated before the call. The response
-is appended to the transcript;
+is appended to the transcript. Before the first action, the opening narration
+is used as historical background without making a summarizer call;
 tracked locations, items, NPCs, objects, exits, movement history, and game-over
 status are left untouched. The sidebar still shows the last tracked state and
 may be stale. Switching back does not reconstruct missed world changes.

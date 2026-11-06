@@ -30,6 +30,9 @@ def process_freeform_turn(state, action, settings=None, on_progress=None, call=N
         'current_action': action,
         'historical_summary': current_summary(state, summarizer, summary_progress),
     }
+    completed = state['history'].get('recentEvents', [])
+    if not request['historical_summary'] and len(completed) == 1:
+        request['historical_summary'] = completed[0]['content']
     progress('started', request=request)
     try:
         result = call.run(json.dumps(request, ensure_ascii=False))
