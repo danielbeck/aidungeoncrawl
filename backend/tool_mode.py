@@ -71,7 +71,11 @@ class GameMasterCall(LLMCall):
             return result
         except (LLMError, TimeoutError, socket.timeout) as error:
             logger.exception('LLM game_master failed after %.3fs', time.monotonic() - started)
-            raise LLMError(f'Game master request failed: {error}') from error
+            raise LLMError(
+                f'Game master request failed: {error}',
+                details=getattr(error, 'details', None),
+                code=getattr(error, 'code', None),
+            ) from error
 
 
 class WorldTools:
@@ -331,7 +335,8 @@ def process_tool_turn(state, action, settings=None, on_progress=None, call=None,
                 ),
             })
         except LLMError as error:
-            progress('game_master', 'failed', operation_id=operation_id, error=str(error))
+            progress('game_master', 'failed', operation_id=operation_id, error=str(error),
+                     response=error.details)
             raise
     else:
         logger.error('Game master exceeded the conversation-round limit')

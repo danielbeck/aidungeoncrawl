@@ -62,7 +62,7 @@ def _post_json(url, payload, headers=None, timeout=60):
     except urllib.error.HTTPError as error:
         details = error.read().decode('utf-8', errors='replace')
         raise LLMError(f'Failed to get a response from {url} (HTTP {error.code}).',
-                       details=details) from error
+                       details=details, code='PROVIDER_HTTP_ERROR') from error
     except urllib.error.URLError as error:
         raise LLMError(f'Failed to reach {url}.', details=str(error.reason)) from error
 

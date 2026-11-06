@@ -21,6 +21,15 @@ def reply(content='', calls=None):
 
 
 class ToolModeTests(unittest.TestCase):
+    def test_game_master_preserves_provider_error_details_and_code(self):
+        failure = LLMError('HTTP 404', details='No endpoints found.', code='PROVIDER_ERROR')
+        master = GameMasterCall(transport=Mock(side_effect=failure))
+        with self.assertRaises(LLMError) as raised:
+            master.respond([])
+        self.assertEqual(raised.exception.details, failure.details)
+        self.assertEqual(raised.exception.code, failure.code)
+        self.assertIn('Game master request failed: HTTP 404', str(raised.exception))
+
     def setUp(self):
         self.state = new_game(1)
         self.events = []

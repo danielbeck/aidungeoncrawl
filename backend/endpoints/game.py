@@ -394,8 +394,12 @@ def _complete_turn(user_id, game_id, request_id, action, original_state,
         updated_state['mode'] = mode
     except LLMError as error:
         current_app.logger.error('LLM gameplay turn failed for user %s: %s', user_id, error)
+        provider_details = error.details if error.code == 'PROVIDER_HTTP_ERROR' else None
+        details = f' Provider details: {provider_details}' if provider_details else ''
         return jsonify({
-            'error': f'The game could not complete that turn: {error} Your state was not changed.',
+            'error': f'The game could not complete that turn: {error}{details} '
+                     'Your state was not changed.',
+            'details': provider_details,
         }), 502
     except InvalidTurnResponse as error:
         current_app.logger.warning('Rejected gameplay response for user %s: %s', user_id, error)

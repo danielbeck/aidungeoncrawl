@@ -266,7 +266,8 @@ class GameApiTests(unittest.TestCase):
         transport = Mock(side_effect=[
             reply(calls=[tool('create_item', name='Key', description='Iron.',
                               location_id=game['currentLocationId'])]),
-            LLMError('Provider unavailable.'),
+            LLMError('Provider unavailable.', details='No endpoints found that support tools.',
+                     code='PROVIDER_HTTP_ERROR'),
         ])
         master = GameMasterCall(transport=transport)
 
@@ -281,6 +282,13 @@ class GameApiTests(unittest.TestCase):
             event = json.loads(response.data.splitlines()[-1])
         self.assertEqual(event['type'], 'error')
         self.assertEqual(event['status'], 502)
+        self.assertEqual(event['data']['details'], 'No endpoints found that support tools.')
+        self.assertIn('No endpoints found that support tools.', event['data']['error'])
+        progress = [json.loads(line) for line in response.data.splitlines()]
+        failed = next(entry for entry in progress
+                      if entry.get('component') == 'game_master'
+                      and entry.get('status') == 'failed')
+        self.assertEqual(failed['response'], event['data']['details'])
         self.assertEqual(self.client.get('/game/').get_json()['game'], game)
 
     def test_stream_reports_progress_before_commit_and_replays_completed_request(self):
